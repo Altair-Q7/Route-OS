@@ -1,4 +1,4 @@
-package app.organicmaps;
+package app.routeos;
 
 import android.location.Location;
 import androidx.annotation.NonNull;

@@ -83,5 +83,6 @@
   <!-- RouteOS branding. Keep it out of the generated strings.xml: app_name is a brand
        name, never translated, and generate_localizations.sh rewrites strings.xml. -->
   <string name="app_name" translatable="false">RouteOS</string>
+  <string name="routeos_tagline" translatable="false">Drive. Track. Deliver.</string>
 
 </resources>

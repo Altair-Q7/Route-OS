@@ -1,4 +1,4 @@
-package app.organicmaps;
+package app.routeos;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -11,13 +11,18 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
+import app.organicmaps.MwmActivity;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONObject;
 
 /** One-screen vehicle choice; vehicle values belong to a ride, not a fleet system. */
 public final class RouteOsVehicleActivity extends Activity {
+  /** Opens the screen as a plain vehicle picker instead of the last step of starting a ride. */
+  public static final String EXTRA_SELECT_ONLY = "routeos_select_only";
+
   private final ExecutorService executor = Executors.newSingleThreadExecutor();
+  private boolean selectOnly;
   private String vehicleType = "Car";
   private LinearLayout types;
   private EditText number;
@@ -25,19 +30,26 @@ public final class RouteOsVehicleActivity extends Activity {
 
   @Override public void onCreate(@Nullable Bundle state) {
     super.onCreate(state);
+    selectOnly = getIntent().getBooleanExtra(EXTRA_SELECT_ONLY, false);
     getWindow().setStatusBarColor(RouteOsUi.BG); getWindow().setNavigationBarColor(RouteOsUi.BG);
     LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
     root.setPadding(RouteOsUi.dp(this, 16), RouteOsUi.dp(this, 24), RouteOsUi.dp(this, 16), RouteOsUi.dp(this, 18)); root.setBackgroundColor(RouteOsUi.BG);
     LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
     TextView back = RouteOsUi.text(this, "‹", 40, Color.WHITE, false); back.setGravity(Gravity.CENTER); RouteOsUi.pressable(back, this::finish); header.addView(back, new LinearLayout.LayoutParams(RouteOsUi.dp(this, 50), RouteOsUi.dp(this, 58)));
     TextView title = RouteOsUi.text(this, "Select Vehicle", 21, Color.WHITE, true); title.setGravity(Gravity.CENTER); header.addView(title, new LinearLayout.LayoutParams(0, RouteOsUi.dp(this, 58), 1)); header.addView(new View(this), new LinearLayout.LayoutParams(RouteOsUi.dp(this, 50), 1)); root.addView(header);
-    root.addView(RouteOsUi.text(this, getIntent().getStringExtra("route_name"), 14, RouteOsUi.MUTED, false), new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 48)));
+    String routeName = getIntent().getStringExtra("route_name");
+    if (routeName != null && !selectOnly)
+      root.addView(RouteOsUi.text(this, routeName, 14, RouteOsUi.MUTED, false), new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 44)));
     vehicleType = getSharedPreferences("routeos", MODE_PRIVATE).getString("last_vehicle_type", "Car");
     types = new LinearLayout(this); root.addView(types, new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 102))); renderTypes();
     TextView label = RouteOsUi.text(this, "Vehicle Number", 14, Color.WHITE, true); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 45)); lp.setMargins(0, RouteOsUi.dp(this, 18), 0, 0); root.addView(label, lp);
     number = new EditText(this); number.setSingleLine(); number.setHint("KL 06 AB 1234"); number.setText(getSharedPreferences("routeos", MODE_PRIVATE).getString("last_vehicle_number", "")); number.setTextColor(Color.WHITE); number.setHintTextColor(RouteOsUi.MUTED); number.setTextSize(16); number.setPadding(RouteOsUi.dp(this, 18), 0, RouteOsUi.dp(this, 18), 0); number.setBackground(RouteOsUi.background(RouteOsUi.CARD, RouteOsUi.dp(this, 17), RouteOsUi.STROKE)); root.addView(number, new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 58)));
     root.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1));
-    startButton = RouteOsUi.text(this, "Start Ride  ›", 18, Color.rgb(2, 36, 27), true); startButton.setGravity(Gravity.CENTER); startButton.setBackground(RouteOsUi.background(RouteOsUi.GREEN, RouteOsUi.dp(this, 28), Color.TRANSPARENT)); RouteOsUi.pressable(startButton, this::startRide); root.addView(startButton, new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 62)));
+    startButton = RouteOsUi.text(this, selectOnly ? "Save Vehicle" : "Start Ride  ›", 18, Color.rgb(2, 36, 27), true);
+    startButton.setGravity(Gravity.CENTER);
+    startButton.setBackground(RouteOsUi.background(RouteOsUi.GREEN, RouteOsUi.dp(this, 28), Color.TRANSPARENT));
+    RouteOsUi.pressable(startButton, this::startRide);
+    root.addView(startButton, new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 62)));
     setContentView(root);
   }
 
@@ -54,6 +66,13 @@ public final class RouteOsVehicleActivity extends Activity {
   private void startRide() {
     String vehicleNumber = number.getText().toString().trim();
     if (vehicleNumber.isEmpty()) { number.setError("Enter a vehicle number"); return; }
+    if (selectOnly) {
+      getSharedPreferences("routeos", MODE_PRIVATE).edit()
+          .putString("last_vehicle_type", vehicleType).putString("last_vehicle_number", vehicleNumber).apply();
+      Toast.makeText(this, "Vehicle saved", Toast.LENGTH_SHORT).show();
+      finish();
+      return;
+    }
     long routeId = getIntent().getLongExtra("route_id", 0); String routeName = getIntent().getStringExtra("route_name");
     double destinationLat = getIntent().getDoubleExtra("destination_lat", Double.NaN); double destinationLon = getIntent().getDoubleExtra("destination_lon", Double.NaN);
     final String selectedType = vehicleType;

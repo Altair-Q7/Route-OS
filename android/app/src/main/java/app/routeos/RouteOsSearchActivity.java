@@ -1,4 +1,4 @@
-package app.organicmaps;
+package app.routeos;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -13,6 +13,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import app.organicmaps.MwmActivity;
+import app.organicmaps.MwmApplication;
 import app.organicmaps.sdk.search.SearchEngine;
 import app.organicmaps.sdk.search.SearchListener;
 import app.organicmaps.sdk.search.SearchResult;
@@ -45,7 +47,7 @@ public final class RouteOsSearchActivity extends Activity implements SearchListe
   }
 
   private void search(String value) {
-    String text = value.trim(); if (text.isEmpty()) return; activeFilter = text; routeData = new JSONArray(); placeData = new SearchResult[0]; results.removeAllViews(); results.addView(section("Searching RouteOS and Organic Maps…"));
+    String text = value.trim(); if (text.isEmpty()) return; activeFilter = text; routeData = new JSONArray(); placeData = new SearchResult[0]; results.removeAllViews(); results.addView(section("Searching RouteOS and the offline map…"));
     searchTimestamp = System.nanoTime(); Location location = MwmApplication.from(this).getLocationHelper().getSavedLocation();
     SearchEngine.INSTANCE.search(this, text, false, searchTimestamp, location != null, location == null ? 0 : location.getLatitude(), location == null ? 0 : location.getLongitude());
     executor.execute(() -> { try { JSONArray routes = RouteOsApi.getRoutes(); runOnUiThread(() -> { routeData = routes; renderResults(); }); } catch (Exception ignored) {} });
@@ -67,7 +69,7 @@ public final class RouteOsSearchActivity extends Activity implements SearchListe
 
   /** Search results may carry no region (or an empty one), which must not leak a "null" row. */
   private String placeDetail(SearchResult item) {
-    if (item.description == null || item.description.region == null || item.description.region.isEmpty()) return "Organic Maps";
+    if (item.description == null || item.description.region == null || item.description.region.isEmpty()) return "Nearby place";
     return item.description.region;
   }
 

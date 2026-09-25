@@ -39,6 +39,10 @@ public class OnmapDownloader
   @Nullable
   private CountryItem mCurrentCountry;
 
+  // RouteOS owns the screen while its overlays are up: the widget must never reappear over them,
+  // even though the storage subscription keeps running so map downloads still progress.
+  private boolean mSuppressed;
+
   private final MapManager.StorageCallback mStorageCallback = new MapManager.StorageCallback() {
     @Override
     public void onStatusChanged(List<MapManager.StorageCallbackData> data)
@@ -175,7 +179,14 @@ public class OnmapDownloader
       }
     }
 
-    UiUtils.showIf(showFrame, mFrame);
+    UiUtils.showIf(showFrame && !mSuppressed, mFrame);
+  }
+
+  public void setSuppressed(boolean suppressed)
+  {
+    mSuppressed = suppressed;
+    if (suppressed)
+      mFrame.setVisibility(View.GONE);
   }
 
   public OnmapDownloader(MwmActivity activity, View onMapDownloader)

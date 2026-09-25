@@ -1,4 +1,4 @@
-package app.organicmaps;
+package app.routeos;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -9,6 +9,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
+import app.organicmaps.MwmActivity;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONObject;
@@ -67,7 +68,7 @@ public final class RouteOsLoginActivity extends Activity {
           if ("admin".equals(user.optString("role")))
             intent = new Intent(this, MwmActivity.class).putExtra("routeos_admin", true).putExtra("routeos_skip_home", true);
           else
-            intent = new Intent(this, RouteOsHomeActivity.class);
+            intent = new Intent(this, MwmActivity.class).putExtra("routeos_home", true);
           startActivity(intent); finish();
         });
       } catch (Exception error) {

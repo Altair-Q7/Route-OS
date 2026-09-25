@@ -473,31 +473,25 @@
     </activity>
 
     <activity
-      android:name="app.organicmaps.RouteOsHomeActivity"
-      android:theme="@style/RouteOsOverlayTheme"
-      android:screenOrientation="portrait"
-      android:exported="false" />
-
-    <activity
-      android:name="app.organicmaps.RouteOsLoginActivity"
+      android:name="app.routeos.RouteOsLoginActivity"
       android:theme="@style/RouteOsTheme"
       android:screenOrientation="portrait"
       android:exported="false" />
 
     <activity
-      android:name="app.organicmaps.RouteOsVehicleActivity"
+      android:name="app.routeos.RouteOsVehicleActivity"
       android:theme="@style/RouteOsTheme"
       android:screenOrientation="portrait"
       android:exported="false" />
 
     <activity
-      android:name="app.organicmaps.RouteOsSearchActivity"
+      android:name="app.routeos.RouteOsSearchActivity"
       android:theme="@style/RouteOsTheme"
       android:screenOrientation="portrait"
       android:exported="false" />
 
     <activity
-      android:name="app.organicmaps.RouteOsRoutesActivity"
+      android:name="app.routeos.RouteOsRoutesActivity"
       android:theme="@style/RouteOsTheme"
       android:screenOrientation="portrait"
       android:label="@string/routeos_saved_routes"

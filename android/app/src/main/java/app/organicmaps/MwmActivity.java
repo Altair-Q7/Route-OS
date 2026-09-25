@@ -23,8 +23,6 @@ import android.location.Location;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.view.KeyEvent;
@@ -35,6 +33,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import androidx.activity.SystemBarStyle;
 import androidx.activity.result.ActivityResult;
@@ -53,6 +52,14 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import app.routeos.RouteOsApi;
+import app.routeos.RouteOsAdminOverlay;
+import app.routeos.RouteOsHomeOverlay;
+import app.routeos.RouteOsNavigationOverlay;
+import app.routeos.RouteOsLoginActivity;
+import app.routeos.RouteOsRecordingSession;
+import app.routeos.RouteOsRoutesActivity;
+import app.routeos.RouteOsUi;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
@@ -61,6 +68,7 @@ import app.organicmaps.api.Const;
 import app.organicmaps.base.BaseMwmFragmentActivity;
 import app.organicmaps.bookmarks.BookmarkCategoriesActivity;
 import app.organicmaps.downloader.DownloaderActivity;
+import app.organicmaps.downloader.MapManagerHelper;
 import app.organicmaps.downloader.OnmapDownloader;
 import app.organicmaps.editor.EditorActivity;
 import app.organicmaps.editor.FeatureCategoryActivity;
@@ -103,11 +111,13 @@ import app.organicmaps.sdk.location.SensorListener;
 import app.organicmaps.sdk.location.TrackRecorder;
 import app.organicmaps.sdk.maplayer.isolines.IsolinesState;
 import app.organicmaps.sdk.routing.RoutingController;
+import app.organicmaps.sdk.routing.RoutingInfo;
 import app.organicmaps.sdk.routing.JunctionInfo;
 import app.organicmaps.sdk.routing.RoutingOptions;
 import app.organicmaps.sdk.search.SearchEngine;
 import app.organicmaps.sdk.settings.RoadType;
 import app.organicmaps.sdk.settings.UnitLocale;
+import app.organicmaps.sdk.sound.TtsPlayer;
 import app.organicmaps.sdk.util.Config;
 import app.organicmaps.sdk.util.Language;
 import app.organicmaps.sdk.util.PowerManagment;
@@ -133,7 +143,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class MwmActivity extends BaseMwmFragmentActivity
@@ -217,11 +226,15 @@ public class MwmActivity extends BaseMwmFragmentActivity
   private boolean mRouteOsUiActive = false;
   @Nullable
   private FrameLayout mRouteOsOverlay;
+  @Nullable
+  private RouteOsHomeOverlay mRouteOsHome;
   private boolean mRouteOsPendingRideStart = false;
   private long mRouteOsActiveRideId = 0;
-  private final Handler mRouteOsHandler = new Handler(Looper.getMainLooper());
+  private boolean mRouteOsEndingRide = false;
   @Nullable
-  private Runnable mRouteOsAdminPoll;
+  private RouteOsAdminOverlay mRouteOsAdmin;
+  @Nullable
+  private RouteOsNavigationOverlay mRouteOsNavigation;
 
   public static Intent createShowMapIntent(@NonNull Context context, @Nullable String countryId)
   {
@@ -279,6 +292,14 @@ public class MwmActivity extends BaseMwmFragmentActivity
     if (intent == null || mIntentConsumed)
       return;
     mIntentConsumed = true;
+
+    if (intent.getBooleanExtra("routeos_home", false))
+    {
+      setOrganicChromeVisible(false);
+      RoutingController.get().cancel();
+      showRouteOsHomeOverlay();
+      return;
+    }
 
     if (intent.getBooleanExtra("routeos_start_recording", false))
     {
@@ -389,7 +410,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
       else if ("admin".equals(getSharedPreferences("routeos", MODE_PRIVATE).getString("role", "driver")))
         showRouteOsAdminOverlay();
       else
-        startActivity(new Intent(this, RouteOsHomeActivity.class));
+        showRouteOsHomeOverlay();
     }
   }
 
@@ -401,6 +422,15 @@ public class MwmActivity extends BaseMwmFragmentActivity
     findViewById(R.id.search_container_fragment).setVisibility(visibility);
     findViewById(R.id.routing_container).setVisibility(visibility);
     findViewById(R.id.place_page_container_fragment).setVisibility(visibility);
+    if (!visible)
+    {
+      // Organic Maps only ever re-enters RouteOS, so its own panels stay retired once hidden.
+      findViewById(R.id.toolbar).setVisibility(View.GONE);
+      findViewById(R.id.onmap_downloader).setVisibility(View.GONE);
+      findViewById(R.id.position_chooser).setVisibility(View.GONE);
+    }
+    if (mOnmapDownloader != null)
+      mOnmapDownloader.setSuppressed(!visible);
   }
 
   private TextView routeOsButton(String title, int color)
@@ -445,14 +475,95 @@ public class MwmActivity extends BaseMwmFragmentActivity
       mRouteOsOverlay.bringToFront();
   }
 
+  /** RouteOS map-first home: the native map stays visible under the RouteOS command surface. */
+  private void showRouteOsHomeOverlay()
+  {
+    setOrganicChromeVisible(false);
+    if (mRouteOsHome == null)
+    {
+      mRouteOsHome = new RouteOsHomeOverlay(this, new RouteOsHomeOverlay.Host()
+      {
+        @Override
+        public void routeOsStartRecording()
+        {
+          RoutingController.get().cancel();
+          if (startTrackRecording())
+            showRouteOsRecordingOverlay();
+        }
+
+        @Override
+        public void routeOsStartDrawing()
+        {
+          RoutingController.get().cancel();
+          showRouteOsDrawOverlay();
+        }
+
+        @Override
+        public void routeOsShowAccount()
+        {
+          showRouteOsAccount();
+        }
+
+        @Override
+        public void routeOsEndRide()
+        {
+          endRouteOsRide();
+        }
+
+        @Override
+        public void routeOsResumeRide(@NonNull JSONObject ride)
+        {
+          resumeRouteOsRide(ride);
+        }
+      });
+    }
+    addRouteOsOverlay(mRouteOsHome.build());
+    mRouteOsHome.refresh();
+  }
+
+  private void resumeRouteOsRide(@NonNull JSONObject ride)
+  {
+    mRouteOsActiveRideId = ride.optLong("id");
+    getSharedPreferences("routeos", MODE_PRIVATE).edit().putLong("active_ride_id", ride.optLong("id")).apply();
+    startActivity(new Intent(this, MwmActivity.class)
+                      .putExtra("routeos_start_ride", true)
+                      .putExtra("routeos_route_name", ride.optString("route_name"))
+                      .putExtra("routeos_ride_id", ride.optLong("id"))
+                      .putExtra("routeos_destination_lat", ride.optDouble("destination_latitude", Double.NaN))
+                      .putExtra("routeos_destination_lon", ride.optDouble("destination_longitude", Double.NaN)));
+  }
+
+  private void showRouteOsAccount()
+  {
+    final var prefs = getSharedPreferences("routeos", MODE_PRIVATE);
+    final String name = prefs.getString("driver_name", "RouteOS account");
+    final String role = prefs.getString("role", "driver");
+    new MaterialAlertDialogBuilder(this)
+        .setTitle(name)
+        .setMessage("admin".equals(role)
+                        ? "Admin account • live ride tracking is available from the map."
+                        : "Driver account • shared routes are available to every signed-in driver.")
+        .setNegativeButton(android.R.string.cancel, null)
+        .setPositiveButton("Switch account", (dialog, which) -> {
+          if (mRouteOsHome != null)
+          {
+            mRouteOsHome.destroy();
+            mRouteOsHome = null;
+          }
+          RouteOsApi.logout(this);
+          startActivity(new Intent(this, RouteOsLoginActivity.class));
+        })
+        .show();
+  }
+
   private void showRouteOsMapOverlay()
   {
-    FrameLayout overlay = routeOsMapOverlay("RouteOS Map", "Organic Maps engine • drag and zoom normally");
+    FrameLayout overlay = routeOsMapOverlay("RouteOS Map", "Drag and zoom • the map is live");
     LinearLayout actions = new LinearLayout(this); actions.setGravity(android.view.Gravity.CENTER);
     TextView home = routeOsButton("Home", Color.rgb(21, 43, 52));
-    home.setOnClickListener(v -> { startActivity(new Intent(this, RouteOsHomeActivity.class)); ((android.view.ViewGroup) overlay.getParent()).removeView(overlay); });
+    home.setOnClickListener(v -> showRouteOsHomeOverlay());
     TextView draw = routeOsButton("Draw Route", Color.rgb(0, 133, 89));
-    draw.setOnClickListener(v -> { ((android.view.ViewGroup) overlay.getParent()).removeView(overlay); showRouteOsDrawOverlay(); });
+    draw.setOnClickListener(v -> showRouteOsDrawOverlay());
     TextView routes = routeOsButton("Saved Routes", Color.rgb(21, 43, 52));
     routes.setOnClickListener(v -> startActivity(new Intent(this, RouteOsRoutesActivity.class)));
     actions.addView(home, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 1, this));
@@ -466,75 +577,19 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
   private void showRouteOsAdminOverlay()
   {
-    FrameLayout overlay = routeOsMapOverlay("Admin Live Tracking", "Active rides update automatically");
-    TextView marker = RouteOsUi.text(this, "●", 42, Color.rgb(255, 78, 92), true);
-    marker.setGravity(android.view.Gravity.CENTER); marker.setVisibility(View.GONE);
-    FrameLayout.LayoutParams markerParams = new FrameLayout.LayoutParams(RouteOsUi.dp(this, 64), RouteOsUi.dp(this, 64));
-    markerParams.gravity = android.view.Gravity.CENTER; overlay.addView(marker, markerParams);
-
-    LinearLayout panel = new LinearLayout(this); panel.setOrientation(LinearLayout.VERTICAL);
-    panel.setPadding(RouteOsUi.dp(this, 18), RouteOsUi.dp(this, 12), RouteOsUi.dp(this, 18), RouteOsUi.dp(this, 12));
-    panel.setBackground(RouteOsUi.background(Color.argb(248, 8, 17, 24), RouteOsUi.dp(this, 22), RouteOsUi.STROKE));
-    TextView status = RouteOsUi.text(this, "Checking active rides…", 15, Color.WHITE, true); panel.addView(status, new LinearLayout.LayoutParams(-1, 0, 1));
-    LinearLayout controls = new LinearLayout(this);
-    TextView refresh = routeOsButton("Refresh", Color.rgb(0, 133, 89)); controls.addView(refresh, RouteOsUi.params(0, RouteOsUi.dp(this, 46), 1, this));
-    TextView logout = routeOsButton("Log out", Color.rgb(42, 54, 65)); controls.addView(logout, RouteOsUi.params(0, RouteOsUi.dp(this, 46), 1, this));
-    panel.addView(controls, new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 54)));
-    FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 154)); panelParams.gravity = android.view.Gravity.BOTTOM; panelParams.setMargins(RouteOsUi.dp(this, 12), 0, RouteOsUi.dp(this, 12), RouteOsUi.dp(this, 18)); overlay.addView(panel, panelParams);
-    addRouteOsOverlay(overlay);
-
-    final Runnable[] fetch = new Runnable[1];
-    fetch[0] = () -> new Thread(() -> {
-      try
-      {
-        JSONArray rides = RouteOsApi.getActiveRides();
-        runOnUiThread(() -> {
-          if (!overlay.isAttachedToWindow()) return;
-          if (rides.length() == 0)
-          {
-            marker.setVisibility(View.GONE); status.setText("No drivers are currently on a ride");
-          }
-          else
-          {
-            JSONObject ride = rides.optJSONObject(0);
-            StringBuilder copy = new StringBuilder(rides.length() + " active ride" + (rides.length() == 1 ? "" : "s"));
-            for (int i = 0; i < rides.length(); i++)
-            {
-              JSONObject item = rides.optJSONObject(i);
-              copy.append("\n").append(item.optString("driver_name")).append(" • ")
-                  .append(item.optString("vehicle_number")).append(" • ").append(item.optString("route_name"));
-            }
-            status.setText(copy.toString());
-            if (ride != null && !ride.isNull("latitude") && !ride.isNull("longitude"))
-            {
-              marker.setVisibility(View.VISIBLE);
-              Framework.nativeZoomToPoint(ride.optDouble("latitude"), ride.optDouble("longitude"), 16, true);
-            }
-            else marker.setVisibility(View.GONE);
-          }
-          mRouteOsHandler.removeCallbacks(fetch[0]); mRouteOsHandler.postDelayed(fetch[0], 3000);
-        });
-      }
-      catch (Exception error)
-      {
-        runOnUiThread(() -> { status.setText("Live tracking unavailable"); mRouteOsHandler.postDelayed(fetch[0], 5000); });
-      }
-    }).start();
-    mRouteOsAdminPoll = fetch[0];
-    refresh.setOnClickListener(v -> { mRouteOsHandler.removeCallbacks(fetch[0]); fetch[0].run(); });
-    logout.setOnClickListener(v -> {
-      // End the admin session cleanly: stop polling and drop the overlay, otherwise a stale
-      // live-tracking panel would survive the next sign-in on the map below.
-      mRouteOsHandler.removeCallbacks(fetch[0]);
-      mRouteOsAdminPoll = null;
+    if (mRouteOsAdmin != null)
+      mRouteOsAdmin.stop();
+    mRouteOsAdmin = new RouteOsAdminOverlay(this, () -> {
+      mRouteOsAdmin.stop();
+      mRouteOsAdmin = null;
       RouteOsApi.logout(this);
-      if (overlay.getParent() instanceof android.view.ViewGroup parent)
-        parent.removeView(overlay);
-      if (mRouteOsOverlay == overlay)
-        mRouteOsOverlay = null;
+      if (mRouteOsOverlay != null && mRouteOsOverlay.getParent() instanceof android.view.ViewGroup parent)
+        parent.removeView(mRouteOsOverlay);
+      mRouteOsOverlay = null;
       startActivity(new Intent(this, RouteOsLoginActivity.class));
     });
-    fetch[0].run();
+    addRouteOsOverlay(mRouteOsAdmin.build());
+    mRouteOsAdmin.start();
   }
 
   private void showRouteOsRecordingOverlay()
@@ -608,58 +663,73 @@ public class MwmActivity extends BaseMwmFragmentActivity
           JunctionInfo[] junctions = Framework.nativeIsRouteBuilt() ? Framework.nativeGetRouteJunctionPoints(20.0) : null;
           if (junctions != null) for (JunctionInfo junction : junctions) { Location point = new Location("routeos"); point.setLatitude(junction.mLat); point.setLongitude(junction.mLon); points.add(point); }
           if (points.size() < 2) { Location last = new Location("routeos"); last.setLatitude(destination[0]); last.setLongitude(destination[1]); points.add(last); }
-          String savedName = name; new Thread(() -> { try { RouteOsApi.publishPoints(this, savedName, points, "Hub", "Map destination"); runOnUiThread(() -> { Toast.makeText(this, "Shared route saved", Toast.LENGTH_LONG).show(); startActivity(new Intent(this, RouteOsHomeActivity.class)); }); } catch (Exception error) { runOnUiThread(() -> Toast.makeText(this, "Save failed: " + error.getMessage(), Toast.LENGTH_LONG).show()); } }).start();
+          String savedName = name; new Thread(() -> { try { RouteOsApi.publishPoints(this, savedName, points, "Hub", "Map destination"); runOnUiThread(() -> { Toast.makeText(this, "Shared route saved", Toast.LENGTH_LONG).show(); showRouteOsHomeOverlay(); }); } catch (Exception error) { runOnUiThread(() -> Toast.makeText(this, "Save failed: " + error.getMessage(), Toast.LENGTH_LONG).show()); } }).start();
         }).show();
   }
 
   private void showRouteOsNavigationOverlay(@NonNull String routeName)
   {
-    FrameLayout overlay = new FrameLayout(this);
-    overlay.setClickable(false);
+    mRouteOsNavigation = new RouteOsNavigationOverlay(this, new RouteOsNavigationOverlay.Host()
+    {
+      @Override
+      public void routeOsEndRide()
+      {
+        endRouteOsRide();
+      }
 
-    LinearLayout instruction = new LinearLayout(this);
-    instruction.setOrientation(LinearLayout.VERTICAL);
-    instruction.setPadding(RouteOsUi.dp(this, 22), RouteOsUi.dp(this, 14), RouteOsUi.dp(this, 22), RouteOsUi.dp(this, 14));
-    instruction.setBackground(RouteOsUi.background(Color.rgb(0, 111, 75), RouteOsUi.dp(this, 20), Color.TRANSPARENT));
-    instruction.addView(RouteOsUi.text(this, "RouteOS navigation", 13, Color.rgb(183, 255, 228), true));
-    instruction.addView(RouteOsUi.text(this, routeName, 23, Color.WHITE, true));
-    instruction.addView(RouteOsUi.text(this, "Follow the recorded track on Organic Maps", 13, Color.WHITE, false));
-    FrameLayout.LayoutParams top = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 112));
-    top.gravity = android.view.Gravity.TOP;
-    top.setMargins(RouteOsUi.dp(this, 16), RouteOsUi.dp(this, 34), RouteOsUi.dp(this, 16), 0);
-    overlay.addView(instruction, top);
-
-    LinearLayout footer = new LinearLayout(this);
-    footer.setGravity(android.view.Gravity.CENTER_VERTICAL);
-    footer.setPadding(RouteOsUi.dp(this, 20), RouteOsUi.dp(this, 10), RouteOsUi.dp(this, 14), RouteOsUi.dp(this, 10));
-    footer.setBackground(RouteOsUi.background(Color.argb(248, 11, 19, 27), RouteOsUi.dp(this, 22), RouteOsUi.STROKE));
-    LinearLayout details = new LinearLayout(this); details.setOrientation(LinearLayout.VERTICAL);
-    details.addView(RouteOsUi.text(this, "TRACK ACTIVE", 12, RouteOsUi.GREEN, true));
-    details.addView(RouteOsUi.text(this, "Organic Maps guidance", 15, Color.WHITE, true));
-    footer.addView(details, new LinearLayout.LayoutParams(0, -1, 1));
-    TextView end = RouteOsUi.text(this, "End", 16, Color.WHITE, true); end.setGravity(android.view.Gravity.CENTER);
-    end.setBackground(RouteOsUi.background(Color.rgb(244, 54, 62), RouteOsUi.dp(this, 22), Color.TRANSPARENT));
-    end.setClickable(true); end.setOnClickListener(v -> endRouteOsRide());
-    footer.addView(end, new LinearLayout.LayoutParams(RouteOsUi.dp(this, 98), RouteOsUi.dp(this, 52)));
-    FrameLayout.LayoutParams bottom = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 82));
-    bottom.gravity = android.view.Gravity.BOTTOM;
-    bottom.setMargins(RouteOsUi.dp(this, 12), 0, RouteOsUi.dp(this, 12), RouteOsUi.dp(this, 18));
-    overlay.addView(footer, bottom);
-    addRouteOsOverlay(overlay);
+      @Override
+      public void routeOsOpenVoiceSettings()
+      {
+        openVoiceInstructionsSettings();
+      }
+    }, routeName);
+    addRouteOsOverlay(mRouteOsNavigation.build());
+    final RoutingInfo info = Framework.nativeGetRouteFollowingInfo();
+    mRouteOsNavigation.update(info, MwmApplication.from(this).getLocationHelper().getSavedLocation());
   }
 
   private void endRouteOsRide()
   {
+    if (mRouteOsEndingRide)
+      return;
     final long rideId = mRouteOsActiveRideId != 0 ? mRouteOsActiveRideId
         : getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0);
+    if (rideId == 0)
+    {
+      finishRouteOsRide();
+      return;
+    }
+    mRouteOsEndingRide = true;
+    Toast.makeText(this, "Ending ride…", Toast.LENGTH_SHORT).show();
+    new Thread(() -> {
+      try
+      {
+        RouteOsApi.endRide(this, rideId);
+      }
+      catch (Exception error)
+      {
+        runOnUiThread(() -> {
+          mRouteOsEndingRide = false;
+          Toast.makeText(this, "Could not end ride. Navigation remains active.", Toast.LENGTH_LONG).show();
+        });
+        return;
+      }
+      runOnUiThread(this::finishRouteOsRide);
+    }, "routeos-end-ride").start();
+  }
+
+  private void finishRouteOsRide()
+  {
+    mRouteOsEndingRide = false;
     RoutingController.get().cancel();
     mRouteOsActiveRideId = 0;
     RouteOsApi.clearActiveRide(this);
-    if (rideId != 0) new Thread(() -> {
-      try { RouteOsApi.endRide(this, rideId); }
-      catch (Exception error) { runOnUiThread(() -> Toast.makeText(this, "Ride ended locally; server sync failed", Toast.LENGTH_LONG).show()); }
-    }).start();
-    startActivity(new Intent(this, RouteOsHomeActivity.class));
+    if (mRouteOsNavigation != null)
+    {
+      mRouteOsNavigation.destroy();
+      mRouteOsNavigation = null;
+    }
+    showRouteOsHomeOverlay();
   }
 
   private void migrateOAuthCredentials()
@@ -1316,6 +1386,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
     mNavigationController.refresh();
     refreshLightStatusBar();
+    if (mRouteOsHome != null && mRouteOsOverlay == mRouteOsHome.build())
+      mRouteOsHome.refresh();
 
     MwmApplication.from(this).getSensorHelper().addListener(this);
   }
@@ -1377,8 +1449,21 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   protected void onSafeDestroy()
   {
-    if (mRouteOsAdminPoll != null)
-      mRouteOsHandler.removeCallbacks(mRouteOsAdminPoll);
+    if (mRouteOsAdmin != null)
+    {
+      mRouteOsAdmin.stop();
+      mRouteOsAdmin = null;
+    }
+    if (mRouteOsHome != null)
+    {
+      mRouteOsHome.destroy();
+      mRouteOsHome = null;
+    }
+    if (mRouteOsNavigation != null)
+    {
+      mRouteOsNavigation.destroy();
+      mRouteOsNavigation = null;
+    }
     super.onSafeDestroy();
     mLocationPermissionRequest.unregister();
     mLocationPermissionRequest = null;
@@ -1412,10 +1497,36 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   public boolean handleBackPress()
   {
+    if (isRouteOsRideActive())
+    {
+      if (mRouteOsEndingRide)
+      {
+        Toast.makeText(this, "Ending ride…", Toast.LENGTH_SHORT).show();
+        return true;
+      }
+      confirmRouteOsRideBackPress();
+      return true;
+    }
+
     final RoutingController routingController = RoutingController.get();
     return (closeBottomSheet(MAIN_MENU_ID) || closeBottomSheet(LAYERS_MENU_ID) || collapseNavMenu() || closePlacePage()
             || closePositionChooser() || closeSearchFragment() || routingController.resetToPlanningStateIfNavigating()
             || routingController.cancel());
+  }
+
+  private boolean isRouteOsRideActive()
+  {
+    return mRouteOsActiveRideId != 0 || getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0) != 0;
+  }
+
+  private void confirmRouteOsRideBackPress()
+  {
+    new MaterialAlertDialogBuilder(this)
+        .setTitle("Ride is still live")
+        .setMessage("Keep RouteOS navigation open while this ride is active. Ending the ride will stop live tracking.")
+        .setNegativeButton("Stay on ride", null)
+        .setPositiveButton("End ride", (dialog, which) -> endRouteOsRide())
+        .show();
   }
 
   @Override
@@ -1775,6 +1886,24 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   public void onCommonBuildError(int lastResultCode, @NonNull String[] lastMissingMaps)
   {
+    // A failed build must never leave a deferred RouteOS ride start armed for a later route.
+    mRouteOsPendingRideStart = false;
+    if (mRouteOsUiActive)
+    {
+      // RouteOS screens never show the Organic Maps missing-maps dialog: pull the data down
+      // quietly and report it in RouteOS wording, then fall back to the RouteOS home surface.
+      if (lastMissingMaps != null && lastMissingMaps.length > 0)
+      {
+        MapManagerHelper.startDownload(this, lastMissingMaps);
+        Toast.makeText(this, "Downloading the map data this route needs…", Toast.LENGTH_LONG).show();
+      }
+      else
+      {
+        Toast.makeText(this, "RouteOS could not build this route yet.", Toast.LENGTH_LONG).show();
+      }
+      showRouteOsHomeOverlay();
+      return;
+    }
     RoutingErrorDialogFragment fragment = RoutingErrorDialogFragment.create(
         getSupportFragmentManager().getFragmentFactory(), getApplicationContext(), lastResultCode, lastMissingMaps);
     fragment.show(getSupportFragmentManager(), RoutingErrorDialogFragment.class.getSimpleName());
@@ -1946,7 +2075,10 @@ public class MwmActivity extends BaseMwmFragmentActivity
     if (!routing.isNavigating())
       return;
 
-    mNavigationController.update(Framework.nativeGetRouteFollowingInfo());
+    final RoutingInfo info = Framework.nativeGetRouteFollowingInfo();
+    mNavigationController.update(info);
+    if (mRouteOsNavigation != null && mRouteOsUiActive)
+      mRouteOsNavigation.update(info, location);
   }
 
   @Override
@@ -2472,7 +2604,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
       saveAndStopTrackRecording();
       RouteOsRecordingSession.clear();
       Toast.makeText(this, "No route was recorded. Start driving before saving.", Toast.LENGTH_LONG).show();
-      startActivity(new Intent(this, RouteOsHomeActivity.class));
+      showRouteOsHomeOverlay();
       return;
     }
 
@@ -2481,7 +2613,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
     new MaterialAlertDialogBuilder(this)
         .setTitle("Save RouteOS route")
         .setView(name)
-        .setNegativeButton(android.R.string.cancel, (dialog, which) -> { stopTrackRecording(); RouteOsRecordingSession.clear(); })
+        .setNegativeButton(android.R.string.cancel, (dialog, which) -> cancelRouteOsRecording())
+        .setOnCancelListener(dialog -> cancelRouteOsRecording())
         .setPositiveButton(android.R.string.ok, (dialog, which) -> {
           String routeName = name.getText().toString().trim();
           if (routeName.isEmpty()) routeName = "Recorded route";
@@ -2494,11 +2627,18 @@ public class MwmActivity extends BaseMwmFragmentActivity
           {
             RouteOsRecordingSession.clear();
             Toast.makeText(this, "Track saved locally, but there were not enough GPS points to share it.", Toast.LENGTH_LONG).show();
-            startActivity(new Intent(this, RouteOsHomeActivity.class));
+            showRouteOsHomeOverlay();
           }
           else publishRecordedRoute(savedName, points);
         })
         .show();
+  }
+
+  private void cancelRouteOsRecording()
+  {
+    stopTrackRecording();
+    RouteOsRecordingSession.clear();
+    showRouteOsHomeOverlay();
   }
 
   private void publishRecordedRoute(@NonNull String name, @NonNull ArrayList<Location> points)
@@ -2508,13 +2648,13 @@ public class MwmActivity extends BaseMwmFragmentActivity
       try
       {
         RouteOsApi.publish(this, name, points); RouteOsRecordingSession.clear();
-        runOnUiThread(() -> { Toast.makeText(this, "Shared route saved", Toast.LENGTH_LONG).show(); startActivity(new Intent(this, RouteOsHomeActivity.class)); });
+        runOnUiThread(() -> { Toast.makeText(this, "Shared route saved", Toast.LENGTH_LONG).show(); showRouteOsHomeOverlay(); });
       }
       catch (Exception error)
       {
         runOnUiThread(() -> new MaterialAlertDialogBuilder(this).setTitle("Could not share route")
-            .setMessage("The Organic Maps track is saved locally. Check the backend connection and retry.")
-            .setNegativeButton("Keep local", (dialog, which) -> { RouteOsRecordingSession.clear(); startActivity(new Intent(this, RouteOsHomeActivity.class)); })
+            .setMessage("The track is saved on this device. Check the backend connection and retry.")
+            .setNegativeButton("Keep local", (dialog, which) -> { RouteOsRecordingSession.clear(); showRouteOsHomeOverlay(); })
             .setPositiveButton("Retry", (dialog, which) -> publishRecordedRoute(name, points)).show());
       }
     }, "routeos-publish-track").start();
