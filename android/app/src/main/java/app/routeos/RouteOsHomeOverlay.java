@@ -323,7 +323,7 @@ public final class RouteOsHomeOverlay
       Exception routeError = null;
       try
       {
-        routes = RouteOsApi.getRoutes();
+        routes = RouteOsApi.getRoutes(mActivity);
       }
       catch (Exception error)
       {

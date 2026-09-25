@@ -50,7 +50,7 @@ public final class RouteOsSearchActivity extends Activity implements SearchListe
     String text = value.trim(); if (text.isEmpty()) return; activeFilter = text; routeData = new JSONArray(); placeData = new SearchResult[0]; results.removeAllViews(); results.addView(section("Searching RouteOS and the offline map…"));
     searchTimestamp = System.nanoTime(); Location location = MwmApplication.from(this).getLocationHelper().getSavedLocation();
     SearchEngine.INSTANCE.search(this, text, false, searchTimestamp, location != null, location == null ? 0 : location.getLatitude(), location == null ? 0 : location.getLongitude());
-    executor.execute(() -> { try { JSONArray routes = RouteOsApi.getRoutes(); runOnUiThread(() -> { routeData = routes; renderResults(); }); } catch (Exception ignored) {} });
+    executor.execute(() -> { try { JSONArray routes = RouteOsApi.getRoutes(this); runOnUiThread(() -> { routeData = routes; renderResults(); }); } catch (Exception ignored) {} });
   }
 
   private TextView section(String title) { TextView view = RouteOsUi.text(this, title, 14, RouteOsUi.MUTED, true); view.setPadding(RouteOsUi.dp(this, 8), RouteOsUi.dp(this, 16), RouteOsUi.dp(this, 8), RouteOsUi.dp(this, 8)); return view; }

@@ -328,14 +328,12 @@ public final class Map
     updateBottomWidgetsOffset(context, mBottomWidgetOffsetX, mBottomWidgetOffsetY);
     if (mDisplayType == DisplayType.Device)
     {
-      nativeSetupWidget(WIDGET_SCALE_FPS_LABEL, Utils.dimen(context, R.dimen.margin_base),
-                        Utils.dimen(context, R.dimen.margin_base) * 2, ANCHOR_LEFT_TOP);
+      // The scale/FPS label is an engine debug widget, not user-facing map chrome. RouteOS owns
+      // the visible product surface, so keep the native map clean while retaining map/routing.
       updateCompassOffset(context, mCurrentCompassOffsetX, mCurrentCompassOffsetY, false);
     }
     else
     {
-      nativeSetupWidget(WIDGET_SCALE_FPS_LABEL, (float) mWidth / 2 + Utils.dimen(context, R.dimen.margin_base) * 2,
-                        Utils.dimen(context, R.dimen.margin_base), ANCHOR_LEFT_TOP);
       updateCompassOffset(context, mWidth, mCurrentCompassOffsetY, true);
     }
   }

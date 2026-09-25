@@ -30,11 +30,16 @@ public final class RouteOsApi {
 
   public static void publish(@NonNull Context context, @NonNull String name, @NonNull List<Location> points) throws Exception {
     if (points.size() < 2) throw new IllegalArgumentException("Move far enough to record at least two GPS points");
-    publishPoints(context, name, points, "Hub", "Recorded destination");
+    publishPoints(context, name, points, "Hub", "Recorded destination", "recorded");
   }
 
   public static void publishPoints(@NonNull Context context, @NonNull String name, @NonNull List<Location> points,
                             @NonNull String origin, @NonNull String destination) throws Exception {
+    publishPoints(context, name, points, origin, destination, "drawn");
+  }
+
+  public static void publishPoints(@NonNull Context context, @NonNull String name, @NonNull List<Location> points,
+                            @NonNull String origin, @NonNull String destination, @NonNull String routeType) throws Exception {
     long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
     if (driverId == 0) {
       String savedName = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getString("driver_name", "Driver");
@@ -57,12 +62,52 @@ public final class RouteOsApi {
                                              .put("track_id", track.getLong("id"))
                                              .put("origin", origin)
                                              .put("destination", destination)
+                                             .put("route_type", routeType)
                                              .put("hub_latitude", points.get(0).getLatitude())
                                              .put("hub_longitude", points.get(0).getLongitude()));
   }
 
   public static JSONArray getRoutes() throws Exception {
     return getArray("/api/v1/routes");
+  }
+
+  public static JSONArray getRoutes(@NonNull Context context) throws Exception {
+    long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
+    return getArray("/api/v1/routes?driver_id=" + driverId);
+  }
+
+  public static JSONObject renameRoute(@NonNull Context context, long routeId, @NonNull String name) throws Exception {
+    long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
+    return patch("/api/v1/routes/" + routeId, new JSONObject().put("driver_id", driverId).put("name", name));
+  }
+
+  public static JSONObject deleteRoute(@NonNull Context context, long routeId) throws Exception {
+    long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
+    return delete("/api/v1/routes/" + routeId + "?driver_id=" + driverId);
+  }
+
+  public static JSONObject setFavorite(@NonNull Context context, long routeId, boolean favorite) throws Exception {
+    long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
+    if (favorite)
+      return post("/api/v1/routes/" + routeId + "/favorite", new JSONObject().put("driver_id", driverId));
+    return delete("/api/v1/routes/" + routeId + "/favorite?driver_id=" + driverId);
+  }
+
+  public static JSONObject markRecent(@NonNull Context context, long routeId) throws Exception {
+    long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
+    return post("/api/v1/routes/" + routeId + "/recent", new JSONObject().put("driver_id", driverId));
+  }
+
+  public static JSONObject clearRecent(@NonNull Context context, long routeId) throws Exception {
+    long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
+    return delete("/api/v1/routes/" + routeId + "/recent?driver_id=" + driverId);
+  }
+
+  public static JSONObject shareRoute(@NonNull Context context, long routeId, long recipientId) throws Exception {
+    long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
+    JSONObject body = new JSONObject().put("driver_id", driverId);
+    body.put("recipient_id", recipientId > 0 ? recipientId : JSONObject.NULL);
+    return post("/api/v1/routes/" + routeId + "/share", body);
   }
 
   public static JSONObject getRoute(long routeId) throws Exception {
@@ -149,6 +194,34 @@ public final class RouteOsApi {
     byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
     try (OutputStream output = connection.getOutputStream()) { output.write(data); }
     java.io.InputStream input = connection.getResponseCode() < 400 ? connection.getInputStream() : connection.getErrorStream();
+    String response = readFully(input);
+    if (connection.getResponseCode() >= 400) throw new IllegalStateException(response);
+    return new JSONObject(response);
+  }
+
+  private static JSONObject patch(String path, JSONObject body) throws Exception {
+    return requestWithBody("PATCH", path, body);
+  }
+
+  private static JSONObject delete(String path) throws Exception {
+    HttpURLConnection connection = (HttpURLConnection) new URL(API + path).openConnection();
+    connection.setRequestMethod("DELETE");
+    connection.setConnectTimeout(3000);
+    connection.setReadTimeout(5000);
+    if (connection.getResponseCode() >= 400)
+      throw new IllegalStateException(readFully(connection.getErrorStream()));
+    return new JSONObject(readFully(connection.getInputStream()));
+  }
+
+  private static JSONObject requestWithBody(@NonNull String method, @NonNull String path, @NonNull JSONObject body) throws Exception {
+    HttpURLConnection connection = (HttpURLConnection) new URL(API + path).openConnection();
+    connection.setRequestMethod(method);
+    connection.setRequestProperty("Content-Type", "application/json");
+    connection.setConnectTimeout(3000);
+    connection.setReadTimeout(5000);
+    connection.setDoOutput(true);
+    try (OutputStream output = connection.getOutputStream()) { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
+    InputStream input = connection.getResponseCode() < 400 ? connection.getInputStream() : connection.getErrorStream();
     String response = readFully(input);
     if (connection.getResponseCode() >= 400) throw new IllegalStateException(response);
     return new JSONObject(response);

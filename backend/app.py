@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import sqlite3
+import math
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,9 +62,26 @@ def initialize_database() -> None:
               track_id INTEGER NOT NULL,
               origin TEXT,
               destination TEXT,
+              route_type TEXT NOT NULL DEFAULT 'recorded',
               created_at TEXT NOT NULL,
               FOREIGN KEY (recorder_id) REFERENCES users(id),
               FOREIGN KEY (track_id) REFERENCES recorded_tracks(id)
+            );
+            CREATE TABLE IF NOT EXISTS route_favorites (
+              user_id INTEGER NOT NULL,
+              route_id INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              PRIMARY KEY (user_id, route_id),
+              FOREIGN KEY (user_id) REFERENCES users(id),
+              FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS route_recents (
+              user_id INTEGER NOT NULL,
+              route_id INTEGER NOT NULL,
+              last_used_at TEXT NOT NULL,
+              PRIMARY KEY (user_id, route_id),
+              FOREIGN KEY (user_id) REFERENCES users(id),
+              FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS rides (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,6 +117,8 @@ def initialize_database() -> None:
             db.execute("ALTER TABLE routes ADD COLUMN hub_latitude REAL")
         if "hub_longitude" not in route_columns:
             db.execute("ALTER TABLE routes ADD COLUMN hub_longitude REAL")
+        if "route_type" not in route_columns:
+            db.execute("ALTER TABLE routes ADD COLUMN route_type TEXT NOT NULL DEFAULT 'recorded'")
         for name, role in (
             ("Disha Patani", "driver"),
             ("Sukumara Kurup", "driver"),
@@ -147,6 +167,7 @@ class RouteIn(BaseModel):
     track_id: int
     origin: str | None = Field(default=None, max_length=120)
     destination: str | None = Field(default=None, max_length=120)
+    route_type: str = Field(default="recorded", pattern="^(recorded|drawn)$")
     hub_latitude: float | None = Field(default=None, ge=-90, le=90)
     hub_longitude: float | None = Field(default=None, ge=-180, le=180)
 
@@ -164,6 +185,18 @@ class LiveLocationIn(BaseModel):
     longitude: float = Field(ge=-180, le=180)
     speed_mps: float | None = Field(default=None, ge=0)
     bearing: float | None = Field(default=None, ge=0, le=360)
+
+
+class RouteActorIn(BaseModel):
+    driver_id: int
+
+
+class RouteRenameIn(RouteActorIn):
+    name: str = Field(min_length=1, max_length=160)
+
+
+class RouteShareIn(RouteActorIn):
+    recipient_id: int | None = None
 
 
 app = FastAPI(title="RouteOS Backend", version="0.1.0")
@@ -243,26 +276,61 @@ def create_route(route: RouteIn) -> dict:
         if track["recorder_id"] != route.recorder_id:
             raise HTTPException(status_code=409, detail="track belongs to another driver")
         cursor = db.execute(
-            "INSERT INTO routes(name, recorder_id, track_id, origin, destination, created_at, hub_latitude, hub_longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO routes(name, recorder_id, track_id, origin, destination, route_type, created_at, hub_latitude, hub_longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (route.name, route.recorder_id, route.track_id, route.origin, route.destination, created_at,
-             route.hub_latitude, route.hub_longitude),
+             route.route_type, route.hub_latitude, route.hub_longitude),
         )
         db.commit()
     return {"id": cursor.lastrowid, **route.model_dump(), "created_at": created_at}
 
 
+def route_stats(points: list[dict]) -> tuple[float, int]:
+    distance = 0.0
+    for first, second in zip(points, points[1:]):
+        lat1, lon1 = math.radians(first["latitude"]), math.radians(first["longitude"])
+        lat2, lon2 = math.radians(second["latitude"]), math.radians(second["longitude"])
+        dlat, dlon = lat2 - lat1, lon2 - lon1
+        a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        distance += 6371000 * 2 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1 - a)))
+    timestamps = [point.get("timestamp") for point in points if point.get("timestamp")]
+    duration = 0
+    if len(timestamps) >= 2:
+        try:
+            duration = max(0, int((datetime.fromisoformat(timestamps[-1]) - datetime.fromisoformat(timestamps[0])).total_seconds()))
+        except ValueError:
+            duration = 0
+    if duration == 0 and distance > 0:
+        duration = max(60, int(distance / 8.3))
+    return distance, duration
+
+
 @app.get("/api/v1/routes")
-def list_routes() -> list[dict]:
+def list_routes(driver_id: int | None = None) -> list[dict]:
     with closing(connection()) as db:
         rows = db.execute(
             """
-            SELECT r.id, r.name, r.recorder_id, r.track_id, r.origin, r.destination, r.created_at,
+            SELECT r.id, r.name, r.recorder_id, r.track_id, r.origin, r.destination, r.route_type, r.created_at,
                    r.hub_latitude, r.hub_longitude, u.name AS recorder_name
             FROM routes r JOIN users u ON u.id = r.recorder_id
             ORDER BY r.id DESC
             """
         ).fetchall()
-    return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            item = dict(row)
+            track = db.execute("SELECT points FROM recorded_tracks WHERE id = ?", (item["track_id"],)).fetchone()
+            points = json.loads(track["points"]) if track else []
+            item["point_count"] = len(points)
+            item["distance_meters"], item["duration_seconds"] = route_stats(points)
+            item["is_favorite"] = bool(driver_id and db.execute(
+                "SELECT 1 FROM route_favorites WHERE user_id = ? AND route_id = ?", (driver_id, item["id"])
+            ).fetchone())
+            recent = db.execute(
+                "SELECT last_used_at FROM route_recents WHERE user_id = ? AND route_id = ?", (driver_id or 0, item["id"])
+            ).fetchone()
+            item["last_used_at"] = recent["last_used_at"] if recent else None
+            result.append(item)
+    return result
 
 
 @app.get("/api/v1/routes/{route_id}")
@@ -270,7 +338,7 @@ def get_route(route_id: int) -> dict:
     with closing(connection()) as db:
         row = db.execute(
             """
-            SELECT r.id, r.name, r.recorder_id, r.track_id, r.origin, r.destination, r.created_at,
+            SELECT r.id, r.name, r.recorder_id, r.track_id, r.origin, r.destination, r.route_type, r.created_at,
                    r.hub_latitude, r.hub_longitude, u.name AS recorder_name,
                    t.organic_maps_track_id, t.points
             FROM routes r JOIN recorded_tracks t ON t.id = r.track_id
@@ -283,7 +351,98 @@ def get_route(route_id: int) -> dict:
         raise HTTPException(status_code=404, detail="route not found")
     route = dict(row)
     route["points"] = json.loads(route.pop("points"))
+    route["point_count"] = len(route["points"])
+    route["distance_meters"], route["duration_seconds"] = route_stats(route["points"])
     return route
+
+
+def route_actor(db: sqlite3.Connection, route_id: int, driver_id: int) -> tuple[sqlite3.Row, sqlite3.Row]:
+    route = db.execute("SELECT * FROM routes WHERE id = ?", (route_id,)).fetchone()
+    if route is None:
+        raise HTTPException(status_code=404, detail="route not found")
+    actor = db.execute("SELECT id, role FROM users WHERE id = ?", (driver_id,)).fetchone()
+    if actor is None:
+        raise HTTPException(status_code=404, detail="driver not found")
+    return route, actor
+
+
+@app.patch("/api/v1/routes/{route_id}")
+def rename_route(route_id: int, rename: RouteRenameIn) -> dict:
+    with closing(connection()) as db:
+        route, actor = route_actor(db, route_id, rename.driver_id)
+        if actor["role"] != "admin" and route["recorder_id"] != rename.driver_id:
+            raise HTTPException(status_code=403, detail="only the route owner or admin can rename this route")
+        db.execute("UPDATE routes SET name = ? WHERE id = ?", (rename.name.strip(), route_id))
+        db.commit()
+    return {"id": route_id, "name": rename.name.strip()}
+
+
+@app.delete("/api/v1/routes/{route_id}")
+def delete_route(route_id: int, driver_id: int) -> dict:
+    with closing(connection()) as db:
+        route, actor = route_actor(db, route_id, driver_id)
+        if actor["role"] != "admin" and route["recorder_id"] != driver_id:
+            raise HTTPException(status_code=403, detail="only the route owner or admin can delete this route")
+        used = db.execute("SELECT id, status FROM rides WHERE route_id = ? LIMIT 1", (route_id,)).fetchone()
+        if used is not None:
+            detail = "route is being used by an active ride" if used["status"] == "active" else "route has ride history and cannot be deleted"
+            raise HTTPException(status_code=409, detail=detail)
+        db.execute("DELETE FROM routes WHERE id = ?", (route_id,))
+        db.execute("DELETE FROM recorded_tracks WHERE id = ? AND NOT EXISTS (SELECT 1 FROM routes WHERE track_id = ?)", (route["track_id"], route["track_id"]))
+        db.commit()
+    return {"id": route_id, "deleted": True}
+
+
+@app.post("/api/v1/routes/{route_id}/favorite")
+def favorite_route(route_id: int, actor: RouteActorIn) -> dict:
+    with closing(connection()) as db:
+        route_actor(db, route_id, actor.driver_id)
+        db.execute("INSERT OR IGNORE INTO route_favorites(user_id, route_id, created_at) VALUES (?, ?, ?)",
+                   (actor.driver_id, route_id, utc_now()))
+        db.commit()
+    return {"id": route_id, "is_favorite": True}
+
+
+@app.delete("/api/v1/routes/{route_id}/favorite")
+def unfavorite_route(route_id: int, driver_id: int) -> dict:
+    with closing(connection()) as db:
+        route_actor(db, route_id, driver_id)
+        db.execute("DELETE FROM route_favorites WHERE user_id = ? AND route_id = ?", (driver_id, route_id))
+        db.commit()
+    return {"id": route_id, "is_favorite": False}
+
+
+@app.post("/api/v1/routes/{route_id}/recent")
+def mark_route_recent(route_id: int, actor: RouteActorIn) -> dict:
+    with closing(connection()) as db:
+        route_actor(db, route_id, actor.driver_id)
+        db.execute(
+            "INSERT INTO route_recents(user_id, route_id, last_used_at) VALUES (?, ?, ?) ON CONFLICT(user_id, route_id) DO UPDATE SET last_used_at = excluded.last_used_at",
+            (actor.driver_id, route_id, utc_now()),
+        )
+        db.commit()
+    return {"id": route_id, "marked_recent": True}
+
+
+@app.delete("/api/v1/routes/{route_id}/recent")
+def clear_route_recent(route_id: int, driver_id: int) -> dict:
+    with closing(connection()) as db:
+        route_actor(db, route_id, driver_id)
+        db.execute("DELETE FROM route_recents WHERE user_id = ? AND route_id = ?", (driver_id, route_id))
+        db.commit()
+    return {"id": route_id, "cleared": True}
+
+
+@app.post("/api/v1/routes/{route_id}/share")
+def share_route(route_id: int, share: RouteShareIn) -> dict:
+    with closing(connection()) as db:
+        route, actor = route_actor(db, route_id, share.driver_id)
+        if share.recipient_id is not None and db.execute("SELECT id FROM users WHERE id = ?", (share.recipient_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="recipient not found")
+        payload = {"route_id": route_id, "shared_by": share.driver_id, "recipient_id": share.recipient_id}
+        db.execute("INSERT INTO events(kind, payload, created_at) VALUES (?, ?, ?)", ("route_shared", json.dumps(payload), utc_now()))
+        db.commit()
+    return {"id": route_id, "shared": True, "recipient_id": share.recipient_id}
 
 
 @app.post("/api/v1/rides", status_code=201)

@@ -402,11 +402,14 @@ public class MwmActivity extends BaseMwmFragmentActivity
         break;
     }
 
-    if (Intent.ACTION_MAIN.equals(intent.getAction()) && !intent.getBooleanExtra("routeos_skip_home", false))
+    boolean routeOsEntry = Intent.ACTION_MAIN.equals(intent.getAction()) || intent.getAction() == null;
+    if (routeOsEntry && !intent.getBooleanExtra("routeos_skip_home", false))
     {
       setOrganicChromeVisible(false);
       if (getSharedPreferences("routeos", MODE_PRIVATE).getLong("driver_id", 0) == 0)
         startActivity(new Intent(this, RouteOsLoginActivity.class));
+      else if (TrackRecorder.nativeIsTrackRecordingEnabled())
+        showRouteOsRecordingOverlay();
       else if ("admin".equals(getSharedPreferences("routeos", MODE_PRIVATE).getString("role", "driver")))
         showRouteOsAdminOverlay();
       else
@@ -2071,6 +2074,12 @@ public class MwmActivity extends BaseMwmFragmentActivity
   {
     dismissLocationErrorDialog();
 
+    // Keep a RouteOS-owned mirror of the native recorder stream while the activity is visible.
+    // TrackRecordingService records the background stream; RouteOsRecordingSession deduplicates
+    // the two callbacks so intermediate fixes are retained exactly once.
+    if (TrackRecorder.nativeIsTrackRecordingEnabled())
+      RouteOsRecordingSession.add(location);
+
     final RoutingController routing = RoutingController.get();
     if (!routing.isNavigating())
       return;
@@ -2482,7 +2491,10 @@ public class MwmActivity extends BaseMwmFragmentActivity
     }
 
     requestPostNotificationsPermission();
-    RouteOsRecordingSession.start();
+    // Activity recreation and the recording notification can re-enter this method while the
+    // native recorder is still active. Do not clear the already captured intermediate points.
+    if (!RouteOsRecordingSession.isActive())
+      RouteOsRecordingSession.start();
 
     if (mCurrentWindowInsets != null)
     {
@@ -2622,7 +2634,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
           TrackRecorder.nativeSaveTrackRecordingWithName(routeName);
           stopTrackRecording();
           final String savedName = routeName;
-          final ArrayList<Location> points = RouteOsRecordingSession.snapshot();
+          final ArrayList<Location> points = RouteOsRecordingSession.finish();
           if (points.size() < 2)
           {
             RouteOsRecordingSession.clear();
