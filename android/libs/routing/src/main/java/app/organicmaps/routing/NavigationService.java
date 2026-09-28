@@ -298,6 +298,7 @@ public class NavigationService extends Service implements LocationListener
     if (Framework.nativeIsRouteFinished())
     {
       routingController.cancel();
+      arriveRouteOsRide();
       sOrganicMaps.getLocationHelper().restartWithNewMode();
       stopSelf();
       return;
@@ -369,19 +370,60 @@ public class NavigationService extends Service implements LocationListener
   private void endRouteOsRide()
   {
     long rideId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0);
-    getSharedPreferences("routeos", MODE_PRIVATE).edit().remove("active_ride_id").remove("active_route_id")
-        .remove("active_route_name").remove("active_destination_lat").remove("active_destination_lon").apply();
     if (rideId == 0) return;
     new Thread(() -> {
-      try { postRouteOs("/api/v1/rides/" + rideId + "/end", new JSONObject()); }
+      long driverId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("driver_id", 0);
+      try
+      {
+        postRouteOs(this, "/api/v1/rides/" + rideId + "/end",
+                    new JSONObject().put("driver_id", driverId));
+        clearRouteOsRidePrefs();
+      }
       catch (Exception e) { Logger.w(TAG, "RouteOS ride end sync failed: " + e.getMessage()); }
     }, "routeos-end-ride").start();
   }
 
-  private static void postRouteOs(@NonNull String path, @NonNull JSONObject body) throws Exception
+  /**
+   * Best-effort arrival: when the engine reaches the destination, complete the server ride too.
+   * The backend still validates hub proximity, so a mismatch leaves the ride active for a
+   * manual end instead of stranding it.
+   */
+  private void arriveRouteOsRide()
   {
-    HttpURLConnection connection = (HttpURLConnection) new URL("http://127.0.0.1:8000" + path).openConnection();
+    long rideId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0);
+    if (rideId == 0) return;
+    new Thread(() -> {
+      long driverId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("driver_id", 0);
+      try
+      {
+        postRouteOs(this, "/api/v1/rides/" + rideId + "/arrive",
+                    new JSONObject().put("driver_id", driverId));
+        clearRouteOsRidePrefs();
+      }
+      catch (Exception e) { Logger.w(TAG, "RouteOS ride arrival sync failed: " + e.getMessage()); }
+    }, "routeos-arrive-ride").start();
+  }
+
+  private void clearRouteOsRidePrefs()
+  {
+    getSharedPreferences("routeos", MODE_PRIVATE).edit().remove("active_ride_id").remove("active_route_id")
+        .remove("active_route_name").remove("active_destination_lat").remove("active_destination_lon").apply();
+  }
+
+  private static String routeOsBaseUrl(@NonNull Context context)
+  {
+    String saved = context.getSharedPreferences("routeos", MODE_PRIVATE).getString("api_base_url", null);
+    return saved == null || saved.isEmpty() ? "http://10.0.2.2:8000" : saved;
+  }
+
+  private static void postRouteOs(@NonNull Context context, @NonNull String path,
+                                  @NonNull JSONObject body) throws Exception
+  {
+    HttpURLConnection connection =
+        (HttpURLConnection) new URL(routeOsBaseUrl(context) + path).openConnection();
     connection.setRequestMethod("POST"); connection.setRequestProperty("Content-Type", "application/json");
+    String token = context.getSharedPreferences("routeos", MODE_PRIVATE).getString("auth_token", null);
+    if (token != null && !token.isEmpty()) connection.setRequestProperty("X-RouteOS-Token", token);
     connection.setConnectTimeout(3000); connection.setReadTimeout(5000); connection.setDoOutput(true);
     try (OutputStream output = connection.getOutputStream())
     { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }

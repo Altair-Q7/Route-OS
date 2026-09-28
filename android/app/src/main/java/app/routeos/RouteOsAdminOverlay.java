@@ -133,7 +133,7 @@ public final class RouteOsAdminOverlay
       mExecutor.execute(() -> {
         try
         {
-          JSONArray rides = RouteOsApi.getActiveRides();
+          JSONArray rides = RouteOsApi.getActiveRides(mActivity);
           mUi.post(() -> render(rides));
         }
         catch (Exception error)

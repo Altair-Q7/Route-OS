@@ -59,6 +59,7 @@ import app.routeos.RouteOsNavigationOverlay;
 import app.routeos.RouteOsLoginActivity;
 import app.routeos.RouteOsRecordingSession;
 import app.routeos.RouteOsRoutesActivity;
+import app.routeos.RouteOsTrackPreview;
 import app.routeos.RouteOsUi;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
@@ -606,6 +607,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
   private void showRouteOsDrawOverlay()
   {
+    RouteOsTrackPreview.clear(this);
     final Location hub = MwmApplication.from(this).getLocationHelper().getSavedLocation();
     if (hub == null)
     {
@@ -643,6 +645,9 @@ public class MwmActivity extends BaseMwmFragmentActivity
         RoutingController.get().addStop(MapObject.createMapObject(MapObject.POI, "Waypoint " + (i + 1),
                                                                   "RouteOS waypoint", point[0], point[1]));
       }
+      // prepare() only sets points; without intermediate stops nothing above triggers a build,
+      // so a single-waypoint preview would silently render nothing.
+      RoutingController.get().checkAndBuildRoute();
       findViewById(R.id.routing_container).postDelayed(() -> findViewById(R.id.routing_container).setVisibility(View.GONE), 250);
       save.setEnabled(true); save.setAlpha(1f); preview.setText("Update Preview");
     });

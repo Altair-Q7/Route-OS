@@ -50,6 +50,7 @@ public final class RouteOsNavigationOverlay
   private TextView mSpeed;
   private TextView mSpeedLimit;
   private TextView mStatus;
+  private boolean mSpeedLimitShown;
 
   public RouteOsNavigationOverlay(@NonNull Activity activity, @NonNull Host host, @NonNull String routeName)
   {
@@ -259,13 +260,20 @@ public final class RouteOsNavigationOverlay
 
     if (info.speedLimitMps > 0)
     {
-      mSpeedLimit.setVisibility(View.VISIBLE);
       mSpeedLimit.setText(Math.round(info.speedLimitMps * 3.6f) + "");
-      mSpeedLimit.setBackground(RouteOsUi.background(Color.argb(240, 255, 255, 255), 100, Color.rgb(226, 61, 61)));
-      mSpeedLimit.setTextColor(Color.rgb(20, 24, 30));
+      if (!mSpeedLimitShown)
+      {
+        mSpeedLimitShown = true;
+        mSpeedLimit.setVisibility(View.VISIBLE);
+        mSpeedLimit.setBackground(RouteOsUi.background(Color.argb(240, 255, 255, 255), 100, Color.rgb(226, 61, 61)));
+        mSpeedLimit.setTextColor(Color.rgb(20, 24, 30));
+      }
     }
-    else
+    else if (mSpeedLimitShown)
+    {
+      mSpeedLimitShown = false;
       mSpeedLimit.setVisibility(View.GONE);
+    }
 
     mStatus.setText("ROUTE ACTIVE  •  " + mRouteName);
   }

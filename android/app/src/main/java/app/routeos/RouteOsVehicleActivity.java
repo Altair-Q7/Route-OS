@@ -84,7 +84,7 @@ public final class RouteOsVehicleActivity extends Activity {
             .putString("last_vehicle_type", selectedType).putString("last_vehicle_number", vehicleNumber)
             .putLong("active_route_id", routeId).putString("active_route_name", routeName)
             .putFloat("active_destination_lat", (float) destinationLat).putFloat("active_destination_lon", (float) destinationLon).apply();
-        runOnUiThread(() -> { Intent map = new Intent(this, MwmActivity.class).putExtra("routeos_start_ride", true).putExtra("routeos_skip_home", true).putExtra("routeos_route_name", routeName).putExtra("routeos_ride_id", ride.optLong("id")).putExtra("routeos_destination_lat", destinationLat).putExtra("routeos_destination_lon", destinationLon); startActivity(map); finish(); });
+        runOnUiThread(() -> { if (isFinishing() || isDestroyed()) return; RouteOsTrackPreview.clear(this); Intent map = new Intent(this, MwmActivity.class).putExtra("routeos_start_ride", true).putExtra("routeos_skip_home", true).putExtra("routeos_route_name", routeName).putExtra("routeos_ride_id", ride.optLong("id")).putExtra("routeos_destination_lat", destinationLat).putExtra("routeos_destination_lon", destinationLon); startActivity(map); finish(); });
       } catch (Exception error) { runOnUiThread(() -> { startButton.setEnabled(true); startButton.setAlpha(1f); startButton.setText("Start Ride  ›"); Toast.makeText(this, "Could not start ride: " + error.getMessage(), Toast.LENGTH_LONG).show(); }); }
     });
   }

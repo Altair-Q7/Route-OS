@@ -14,11 +14,8 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 import app.organicmaps.MwmActivity;
 import app.organicmaps.MwmApplication;
-import app.organicmaps.sdk.bookmarks.data.BookmarkManager;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
@@ -28,13 +25,12 @@ import org.json.JSONObject;
 
 /** Image-spec RouteOS route picker backed by real shared tracks. */
 public final class RouteOsRoutesActivity extends Activity {
-  private static final String API = "http://127.0.0.1:8000";
   private final ExecutorService executor = Executors.newSingleThreadExecutor();
   private final ArrayList<JSONObject> routes = new ArrayList<>();
   private LinearLayout routeList;
   private LinearLayout filters;
   private EditText search;
-  private int selected = -1;
+  private long selectedId = -1;
   private String routeFilter = "All";
 
   @Override public void onCreate(@Nullable Bundle state) {
@@ -82,9 +78,29 @@ public final class RouteOsRoutesActivity extends Activity {
     LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 58)); buttonParams.setMargins(0, RouteOsUi.dp(this, 10), 0, 0); root.addView(continueButton, buttonParams);
     setContentView(root);
     String initialQuery = getIntent().getStringExtra("routeos_query");
+    if (state != null) {
+      selectedId = state.getLong("routeos_selected_id", -1);
+      String savedFilter = state.getString("routeos_filter");
+      if (savedFilter != null) { routeFilter = savedFilter; renderFilters(); }
+      String savedQuery = state.getString("routeos_query");
+      if (savedQuery != null) initialQuery = savedQuery;
+    }
     if (initialQuery != null) search.setText(initialQuery);
     routeList.addView(RouteOsUi.text(this, "Loading saved routes…", 14, RouteOsUi.MUTED, false));
     loadRoutes();
+  }
+
+  @Override protected void onSaveInstanceState(android.os.Bundle out) {
+    super.onSaveInstanceState(out);
+    out.putLong("routeos_selected_id", selectedId);
+    out.putString("routeos_filter", routeFilter);
+    if (search != null) out.putString("routeos_query", search.getText().toString());
+  }
+
+  private int indexOfRoute(long routeId) {
+    for (int i = 0; i < routes.size(); i++)
+      if (routes.get(i).optLong("id") == routeId) return i;
+    return -1;
   }
 
   private View tab(String label, boolean active) {
@@ -98,7 +114,7 @@ public final class RouteOsRoutesActivity extends Activity {
   private View chip(String label, boolean active) {
     TextView chip = RouteOsUi.text(this, label, 12, active ? Color.WHITE : RouteOsUi.MUTED, active); chip.setGravity(Gravity.CENTER);
     chip.setBackground(RouteOsUi.background(active ? Color.rgb(0, 125, 83) : Color.TRANSPARENT, RouteOsUi.dp(this, 18), active ? RouteOsUi.GREEN : RouteOsUi.STROKE));
-    RouteOsUi.pressable(chip, () -> { routeFilter = label; selected = -1; renderFilters(); renderRoutes(search.getText().toString()); });
+    RouteOsUi.pressable(chip, () -> { routeFilter = label; selectedId = -1; renderFilters(); renderRoutes(search.getText().toString()); });
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, RouteOsUi.dp(this, 38)); params.setMargins(0, 4, RouteOsUi.dp(this, 8), 4); chip.setLayoutParams(params); chip.setPadding(RouteOsUi.dp(this, 17), 0, RouteOsUi.dp(this, 17), 0); return chip;
   }
 
@@ -138,7 +154,7 @@ public final class RouteOsRoutesActivity extends Activity {
       if (routeFilter.equals("Nearby") && (nearby == null || !nearby.contains(index))) continue;
       if (routeFilter.equals("Favourites") && !route.optBoolean("is_favorite")) continue;
       if (routeFilter.equals("Recent") && route.isNull("last_used_at")) continue;
-      final int routeIndex = index; boolean active = selected == index;
+      final long routeId = route.optLong("id"); boolean active = selectedId == routeId;
       LinearLayout card = new LinearLayout(this); card.setGravity(Gravity.CENTER_VERTICAL); card.setPadding(RouteOsUi.dp(this, 10), RouteOsUi.dp(this, 8), RouteOsUi.dp(this, 10), RouteOsUi.dp(this, 8));
       card.setBackground(RouteOsUi.background(active ? Color.rgb(18, 48, 40) : RouteOsUi.CARD, RouteOsUi.dp(this, 16), active ? RouteOsUi.GREEN : Color.TRANSPARENT));
       TextView mapTile = RouteOsUi.text(this, "⌁", 28, active ? RouteOsUi.GREEN : Color.rgb(99, 186, 238), true); mapTile.setGravity(Gravity.CENTER); mapTile.setBackground(RouteOsUi.background(Color.rgb(22, 69, 60), RouteOsUi.dp(this, 12), Color.TRANSPARENT)); card.addView(mapTile, new LinearLayout.LayoutParams(RouteOsUi.dp(this, 64), RouteOsUi.dp(this, 64)));
@@ -148,18 +164,19 @@ public final class RouteOsRoutesActivity extends Activity {
       copy.addView(RouteOsUi.text(this, "Saved " + relativeDate(route.optString("created_at")) + "  •  " + route.optString("recorder_name", "RouteOS"), 11, RouteOsUi.MUTED, false));
       card.addView(copy, new LinearLayout.LayoutParams(0, RouteOsUi.dp(this, 68), 1));
       TextView actions = RouteOsUi.text(this, "⋯", 24, RouteOsUi.MUTED, true); actions.setGravity(Gravity.CENTER);
-      RouteOsUi.pressable(actions, () -> showRouteDetails(routeIndex));
+      RouteOsUi.pressable(actions, () -> showRouteDetails(routeId));
       card.addView(actions, new LinearLayout.LayoutParams(RouteOsUi.dp(this, 36), -1));
       TextView radio = RouteOsUi.text(this, active ? "●" : "○", 25, active ? RouteOsUi.GREEN : RouteOsUi.MUTED, true); radio.setGravity(Gravity.CENTER); card.addView(radio, new LinearLayout.LayoutParams(RouteOsUi.dp(this, 34), -1));
-      RouteOsUi.pressable(card, () -> { selected = routeIndex; renderRoutes(search.getText().toString()); });
+      RouteOsUi.pressable(card, () -> { selectedId = routeId; renderRoutes(search.getText().toString()); });
       LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 84)); params.setMargins(0, 0, 0, RouteOsUi.dp(this, 8)); routeList.addView(card, params);
     }
     if (routeList.getChildCount() == 0) routeList.addView(RouteOsUi.text(this,
         routes.isEmpty() ? "No saved routes yet. Record or draw one from Home." : "No matching saved routes", 14, RouteOsUi.MUTED, false));
   }
 
-  private void showRouteDetails(int index) {
-    if (index < 0 || index >= routes.size()) return;
+  private void showRouteDetails(long routeId) {
+    int index = indexOfRoute(routeId);
+    if (index < 0) return;
     JSONObject route = routes.get(index);
     String type = "drawn".equals(route.optString("route_type")) ? "Drawn route" : "Recorded track";
     double km = route.optDouble("distance_meters", 0) / 1000.0;
@@ -172,27 +189,28 @@ public final class RouteOsRoutesActivity extends Activity {
     android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
         .setTitle(route.optString("name", "Saved route"))
         .setMessage(message)
-        .setPositiveButton("Use route", (d, which) -> { selected = index; markRecentAndImport(route); })
+        .setPositiveButton("Use route", (d, which) -> { selectedId = route.optLong("id"); markRecentAndImport(route); })
         .setNeutralButton(route.optBoolean("is_favorite") ? "Unfavourite" : "Favourite", (d, which) -> toggleFavorite(route))
         .setNegativeButton("More", null).create();
     dialog.setOnShowListener(ignored -> {
-      dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> showRouteActions(dialog, index));
+      dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> showRouteActions(dialog, route.optLong("id")));
     });
     dialog.show();
   }
 
-  private void showRouteActions(android.app.AlertDialog details, int index) {
+  private void showRouteActions(android.app.AlertDialog details, long routeId) {
     details.dismiss();
-    if (index < 0 || index >= routes.size()) return;
+    int index = indexOfRoute(routeId);
+    if (index < 0) { Toast.makeText(this, "Route list changed, please retry", Toast.LENGTH_SHORT).show(); return; }
     JSONObject route = routes.get(index);
     String[] actions = {"Show on map", "Rename", "Share with drivers", "Clear from recent", "Delete route"};
     new android.app.AlertDialog.Builder(this).setTitle("Route actions")
         .setItems(actions, (d, which) -> {
           if (which == 0) previewRoute(route);
-          else if (which == 1) renameRoute(index);
-          else if (which == 2) shareRoute(index);
+          else if (which == 1) renameRoute(routeId);
+          else if (which == 2) shareRoute(routeId);
           else if (which == 3) clearRecent(route);
-          else confirmDelete(index);
+          else confirmDelete(routeId);
         }).show();
   }
 
@@ -202,7 +220,9 @@ public final class RouteOsRoutesActivity extends Activity {
     return "admin".equals(role) || route.optLong("recorder_id") == id;
   }
 
-  private void renameRoute(int index) {
+  private void renameRoute(long routeId) {
+    int index = indexOfRoute(routeId);
+    if (index < 0) { toast("Route list changed, please retry"); return; }
     JSONObject route = routes.get(index);
     if (!canManage(route)) { toast("Only the route owner or admin can rename this route"); return; }
     EditText input = new EditText(this); input.setSingleLine(true); input.setText(route.optString("name")); input.setSelectAllOnFocus(true);
@@ -217,7 +237,9 @@ public final class RouteOsRoutesActivity extends Activity {
     executor.execute(() -> { try { RouteOsApi.setFavorite(this, route.getLong("id"), !route.optBoolean("is_favorite")); runOnUiThread(this::loadRoutes); } catch (Exception e) { runOnUiThread(() -> toast("Could not update favourite")); } });
   }
 
-  private void shareRoute(int index) {
+  private void shareRoute(long routeId) {
+    int index = indexOfRoute(routeId);
+    if (index < 0) { toast("Route list changed, please retry"); return; }
     JSONObject route = routes.get(index);
     EditText recipient = new EditText(this); recipient.setSingleLine(true); recipient.setHint("Driver ID (blank = all drivers)"); recipient.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
     new android.app.AlertDialog.Builder(this).setTitle("Share route").setMessage("Choose a RouteOS driver or share it with all drivers.").setView(recipient)
@@ -235,13 +257,15 @@ public final class RouteOsRoutesActivity extends Activity {
     executor.execute(() -> { try { RouteOsApi.clearRecent(this, route.getLong("id")); runOnUiThread(this::loadRoutes); } catch (Exception e) { runOnUiThread(() -> toast("Could not clear recent route")); } });
   }
 
-  private void confirmDelete(int index) {
+  private void confirmDelete(long routeId) {
+    int index = indexOfRoute(routeId);
+    if (index < 0) { toast("Route list changed, please retry"); return; }
     JSONObject route = routes.get(index);
     if (!canManage(route)) { toast("Only the route owner or admin can delete this route"); return; }
     new android.app.AlertDialog.Builder(this).setTitle("Delete route?")
         .setMessage("Delete ‘" + route.optString("name", "Saved route") + "’? This cannot be undone.")
         .setNegativeButton("Cancel", null).setPositiveButton("Delete", (d, w) -> executor.execute(() -> {
-          try { RouteOsApi.deleteRoute(this, route.getLong("id")); if (selected == index) selected = -1; runOnUiThread(this::loadRoutes); }
+          try { RouteOsApi.deleteRoute(this, routeId); if (selectedId == routeId) selectedId = -1; runOnUiThread(this::loadRoutes); }
           catch (Exception e) { runOnUiThread(() -> toast("Route was not deleted: " + e.getMessage())); }
         })).show();
   }
@@ -284,8 +308,9 @@ public final class RouteOsRoutesActivity extends Activity {
   }
 
   private void continueWithSelection() {
-    if (selected < 0 || selected >= routes.size()) { Toast.makeText(this, "Select a route first", Toast.LENGTH_SHORT).show(); return; }
-    markRecentAndImport(routes.get(selected));
+    int index = indexOfRoute(selectedId);
+    if (index < 0) { Toast.makeText(this, "Select a route first", Toast.LENGTH_SHORT).show(); return; }
+    markRecentAndImport(routes.get(index));
   }
 
   private void importRoute(JSONObject summary) {
@@ -295,7 +320,7 @@ public final class RouteOsRoutesActivity extends Activity {
   private void loadRouteFile(JSONObject summary, boolean openVehicle) {
     executor.execute(() -> {
       try {
-        JSONObject route = requestObject("/api/v1/routes/" + summary.getLong("id")); JSONArray points = route.getJSONArray("points");
+        JSONObject route = RouteOsApi.getRoute(this, summary.getLong("id")); JSONArray points = route.getJSONArray("points");
         if (points.length() < 2) throw new IllegalArgumentException("route has no usable track"); JSONArray coordinates = new JSONArray();
         for (int i = 0; i < points.length(); i++) { JSONObject point = points.getJSONObject(i); coordinates.put(new JSONArray().put(point.getDouble("longitude")).put(point.getDouble("latitude"))); }
         JSONObject feature = new JSONObject().put("type", "Feature").put("geometry", new JSONObject().put("type", "LineString").put("coordinates", coordinates)).put("properties", new JSONObject().put("name", route.optString("name", "RouteOS route")));
@@ -303,7 +328,7 @@ public final class RouteOsRoutesActivity extends Activity {
         try (FileOutputStream output = new FileOutputStream(file)) { output.write(new JSONObject().put("type", "FeatureCollection").put("features", new JSONArray().put(feature)).toString().getBytes(StandardCharsets.UTF_8)); }
         JSONObject destination = points.getJSONObject(points.length() - 1);
         runOnUiThread(() -> {
-          BookmarkManager.INSTANCE.loadBookmarksFile(file.getAbsolutePath(), true);
+          RouteOsTrackPreview.replace(this, file, route.optLong("id"));
           if (!openVehicle) {
             startActivity(new Intent(this, MwmActivity.class).putExtra("routeos_map", true).putExtra("routeos_skip_home", true)); finish(); return;
           }
@@ -316,12 +341,6 @@ public final class RouteOsRoutesActivity extends Activity {
         });
       } catch (Exception error) { runOnUiThread(() -> Toast.makeText(this, "Could not load route: " + error.getMessage(), Toast.LENGTH_LONG).show()); }
     });
-  }
-
-  private JSONObject requestObject(String path) throws Exception {
-    HttpURLConnection connection = (HttpURLConnection) new URL(API + path).openConnection(); connection.setConnectTimeout(3000); connection.setReadTimeout(5000);
-    if (connection.getResponseCode() != 200) throw new IllegalStateException("HTTP " + connection.getResponseCode());
-    return new JSONObject(RouteOsApi.readFully(connection.getInputStream()));
   }
 
   private void openNativeMap() { startActivity(new android.content.Intent(this, MwmActivity.class).putExtra("routeos_home", true)); finish(); }
