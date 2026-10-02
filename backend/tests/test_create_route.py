@@ -60,8 +60,8 @@ def test_create_recorded_route_stores_recorded_type():
 
 def test_listed_routes_keep_route_type_and_created_at_in_their_columns():
     with api() as client:
-        _, created = _create_route(client, "Filtered route", "drawn")
-        listed = client.get("/api/v1/routes").json()
+        user, created = _create_route(client, "Filtered route", "drawn")
+        listed = client.get("/api/v1/routes", headers=auth_headers(user)).json()
         assert created["id"] in [route["id"] for route in listed]
         for route in listed:
             assert route["route_type"] in {"recorded", "drawn"}

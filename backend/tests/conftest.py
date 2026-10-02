@@ -10,6 +10,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
 os.environ["ROUTEOS_DATABASE"] = str(Path(tempfile.mkdtemp(prefix="routeos-tests-")) / "routeos.db")
+os.environ["ROUTEOS_DEVELOPMENT_AUTH"] = "1"
 
 import app as routeos_app  # noqa: E402
 

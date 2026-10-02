@@ -5,8 +5,10 @@ import json
 import secrets
 import sqlite3
 import math
+import hashlib
+import hmac
 from contextlib import asynccontextmanager, closing
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -16,6 +18,24 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.getenv("ROUTEOS_DATABASE", ROOT / "routeos.db"))
+
+
+def development_auth() -> bool:
+    return os.getenv("ROUTEOS_DEVELOPMENT_AUTH", "0") == "1"
+
+
+def password_hash(password: str, salt: str | None = None) -> str:
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 600_000).hex()
+    return f"{salt}:{digest}"
+
+
+def issue_session(db, user_id: int) -> str:
+    token = new_token()
+    db.execute("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES (?,?,?)",
+               (hashlib.sha256(token.encode()).hexdigest(), user_id,
+                (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()))
+    return token
 
 
 def utc_now() -> str:
@@ -171,6 +191,11 @@ def initialize_database() -> None:
             db.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'driver'")
         if "auth_token" not in user_columns:
             db.execute("ALTER TABLE users ADD COLUMN auth_token TEXT")
+        if "password_hash" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        db.execute("""CREATE TABLE IF NOT EXISTS sessions (
+            token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+            expires_at TEXT NOT NULL)""")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_auth_token ON users(auth_token)")
         db.execute(
             """
@@ -184,6 +209,9 @@ def initialize_database() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_rides_active_driver ON rides(driver_id) WHERE status = 'active'"
         )
         route_columns = {row["name"] for row in db.execute("PRAGMA table_info(routes)").fetchall()}
+        for column, kind in (("waypoints", "TEXT"), ("distance_meters", "REAL"), ("duration_seconds", "INTEGER"), ("point_count", "INTEGER")):
+            if column not in route_columns:
+                db.execute(f"ALTER TABLE routes ADD COLUMN {column} {kind}")
         if "hub_latitude" not in route_columns:
             db.execute("ALTER TABLE routes ADD COLUMN hub_latitude REAL")
         if "hub_longitude" not in route_columns:
@@ -227,6 +255,15 @@ def initialize_database() -> None:
                     "INSERT INTO users(name, role, auth_token, created_at) VALUES (?, ?, ?, ?)",
                     (name, role, new_token(), utc_now()),
                 )
+        for row in db.execute("""SELECT r.id,t.points FROM routes r JOIN recorded_tracks t ON t.id=r.track_id
+            WHERE r.point_count IS NULL OR r.distance_meters IS NULL""").fetchall():
+            try:
+                points = json.loads(row["points"])
+                distance, duration = route_stats(points)
+            except (ValueError, TypeError, KeyError):
+                points, distance, duration = [], 0, 0
+            db.execute("""UPDATE routes SET point_count=?,distance_meters=COALESCE(distance_meters,?),
+                duration_seconds=COALESCE(duration_seconds,?) WHERE id=?""", (len(points),distance,duration,row["id"]))
         db.commit()
 
 
@@ -237,10 +274,12 @@ class EventIn(BaseModel):
 
 class UserIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    password: str | None = Field(default=None, min_length=12, max_length=256)
 
 
 class LoginIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    password: str | None = Field(default=None, max_length=256)
 
 
 class TrackPoint(BaseModel):
@@ -285,6 +324,30 @@ class RideIn(BaseModel):
     vehicle_number: str = Field(min_length=1, max_length=40)
 
 
+class PlannedPoint(TrackPoint):
+    sequence: int = Field(ge=0)
+    type: str = Field(pattern="^(start|via|destination)$")
+    label: str | None = Field(default=None, max_length=200)
+    address: str | None = Field(default=None, max_length=500)
+
+
+class PlannedRouteIn(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    points: list[PlannedPoint] = Field(min_length=2, max_length=102)
+    distance_meters: float = Field(gt=0)
+    duration_seconds: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def ordered_points(self):
+        if not self.name.strip():
+            raise ValueError("route name must not be blank")
+        for i, point in enumerate(self.points):
+            expected = "start" if i == 0 else "destination" if i == len(self.points)-1 else "via"
+            if point.sequence != i or point.type != expected:
+                raise ValueError("points must be ordered start, via, destination")
+        return self
+
+
 class LiveLocationIn(BaseModel):
     driver_id: int
     latitude: float = Field(ge=-90, le=90)
@@ -313,13 +376,16 @@ class ArriveIn(BaseModel):
     driver_id: int
 
 
-def current_user(x_routeos_token: str | None = Header(default=None)) -> dict:
-    if not x_routeos_token:
+def current_user(x_routeos_token: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict:
+    bearer = authorization[7:] if authorization and authorization.startswith("Bearer ") else None
+    if not bearer and not (development_auth() and x_routeos_token):
         raise HTTPException(status_code=401, detail="missing API token")
     with closing(connection()) as db:
-        user = db.execute(
-            "SELECT id, name, role FROM users WHERE auth_token = ?", (x_routeos_token,)
-        ).fetchone()
+        user = db.execute("""SELECT u.id,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id
+            WHERE s.token_hash=? AND s.expires_at>?""",
+            (hashlib.sha256((bearer or "").encode()).hexdigest(), utc_now())).fetchone()
+        if user is None and development_auth():
+            user = db.execute("SELECT id,name,role FROM users WHERE auth_token=?", (bearer or x_routeos_token,)).fetchone()
     if user is None:
         raise HTTPException(status_code=401, detail="invalid API token")
     return dict(user)
@@ -339,7 +405,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="RouteOS Backend", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[v.strip() for v in os.getenv("ROUTEOS_CORS_ORIGINS", "").split(",") if v.strip()],
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -356,15 +422,19 @@ def create_user(user: UserIn) -> dict:
     name = user.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="name must not be blank")
+    if not user.password and not development_auth():
+        raise HTTPException(status_code=422, detail="password of at least 12 characters required")
     created_at = utc_now()
     token = new_token()
     with closing(connection()) as db:
         if db.execute("SELECT 1 FROM users WHERE lower(name) = lower(?)", (name,)).fetchone() is not None:
             raise HTTPException(status_code=409, detail="account name already taken")
         cursor = db.execute(
-            "INSERT INTO users(name, role, auth_token, created_at) VALUES (?, 'driver', ?, ?)",
-            (name, token, created_at),
+            "INSERT INTO users(name, role, auth_token, password_hash, created_at) VALUES (?, 'driver', ?, ?, ?)",
+            (name, token, password_hash(user.password) if user.password else None, created_at),
         )
+        if user.password:
+            token = issue_session(db, cursor.lastrowid)
         db.commit()
     return {"id": cursor.lastrowid, "name": name, "role": "driver", "auth_token": token, "created_at": created_at}
 
@@ -374,17 +444,35 @@ def login(login: LoginIn) -> dict:
     normalized_name = login.name.strip()
     with closing(connection()) as db:
         existing = db.execute(
-            "SELECT id, name, role, auth_token, created_at FROM users WHERE lower(name) = lower(?) ORDER BY id LIMIT 1",
+            "SELECT id, name, role, auth_token, password_hash, created_at FROM users WHERE lower(name) = lower(?) ORDER BY id LIMIT 1",
             (normalized_name,),
         ).fetchone()
         if existing is not None:
             user = dict(existing)
+            encoded = user.pop("password_hash")
+            if encoded:
+                if not login.password or not hmac.compare_digest(encoded, password_hash(login.password, encoded.split(":")[0])):
+                    raise HTTPException(status_code=401, detail="invalid credentials")
+                user["auth_token"] = issue_session(db, user["id"])
+                db.commit()
+                return user
+            if not development_auth():
+                raise HTTPException(status_code=401, detail="invalid credentials")
             if user["auth_token"] is None:
                 user["auth_token"] = new_token()
                 db.execute("UPDATE users SET auth_token = ? WHERE id = ?", (user["auth_token"], user["id"]))
                 db.commit()
             return user
     raise HTTPException(status_code=401, detail="unknown RouteOS quick-login account")
+
+
+@app.post("/api/v1/auth/logout")
+def logout(me: dict = Depends(current_user), authorization: str | None = Header(default=None)) -> dict:
+    if authorization and authorization.startswith("Bearer "):
+        with closing(connection()) as db:
+            db.execute("DELETE FROM sessions WHERE token_hash=?", (hashlib.sha256(authorization[7:].encode()).hexdigest(),))
+            db.commit()
+    return {"logged_out": True}
 
 
 @app.post("/api/v1/tracks", status_code=201)
@@ -417,7 +505,7 @@ def create_route(route: RouteIn, me: dict = Depends(current_user)) -> dict:
         if db.execute("SELECT 1 FROM users WHERE id = ?", (route.recorder_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail="recorder not found")
         track = db.execute(
-            "SELECT recorder_id FROM recorded_tracks WHERE id = ?", (route.track_id,)
+            "SELECT recorder_id, points FROM recorded_tracks WHERE id = ?", (route.track_id,)
         ).fetchone()
         if track is None:
             raise HTTPException(status_code=404, detail="recorded track not found")
@@ -438,6 +526,10 @@ def create_route(route: RouteIn, me: dict = Depends(current_user)) -> dict:
                 "hub_longitude": route.hub_longitude,
             },
         )
+        points = json.loads(track["points"])
+        distance, duration = route_stats(points)
+        db.execute("UPDATE routes SET point_count=?,distance_meters=?,duration_seconds=? WHERE id=?",
+                   (len(points),distance,duration,cursor.lastrowid))
         db.commit()
     return {"id": cursor.lastrowid, **route.model_dump(), "created_at": created_at}
 
@@ -462,42 +554,54 @@ def route_stats(points: list[dict]) -> tuple[float, int]:
 
 
 @app.get("/api/v1/routes")
-def list_routes(driver_id: int | None = None) -> list[dict]:
+def list_routes(driver_id: int | None = None, me: dict = Depends(current_user)) -> list[dict]:
+    if driver_id is not None:
+        caller_owns(me, driver_id)
+    viewer_id = me["id"]
     with closing(connection()) as db:
         rows = db.execute(
             """
             SELECT r.id, r.name, r.recorder_id, r.track_id, r.origin, r.destination, r.route_type, r.created_at,
-                   r.hub_latitude, r.hub_longitude, u.name AS recorder_name
+                   r.hub_latitude, r.hub_longitude, r.distance_meters, r.duration_seconds, r.point_count,
+                   u.name AS recorder_name, f.route_id IS NOT NULL AS is_favorite, rec.last_used_at
              FROM routes r JOIN users u ON u.id = r.recorder_id
-             ORDER BY r.created_at DESC, r.id DESC
+             LEFT JOIN route_favorites f ON f.route_id=r.id AND f.user_id=?
+             LEFT JOIN route_recents rec ON rec.route_id=r.id AND rec.user_id=?
+             ORDER BY COALESCE(rec.last_used_at,r.created_at) DESC, r.id DESC
              """
+            , (viewer_id, viewer_id)
         ).fetchall()
         result = []
         for row in rows:
             item = dict(row)
-            track = db.execute("SELECT points FROM recorded_tracks WHERE id = ?", (item["track_id"],)).fetchone()
-            points = json.loads(track["points"]) if track else []
-            item["point_count"] = len(points)
-            item["distance_meters"], item["duration_seconds"] = route_stats(points)
-            item["is_favorite"] = bool(driver_id and db.execute(
-                "SELECT 1 FROM route_favorites WHERE user_id = ? AND route_id = ?", (driver_id, item["id"])
-            ).fetchone())
-            recent = db.execute(
-                "SELECT last_used_at FROM route_recents WHERE user_id = ? AND route_id = ?", (driver_id, item["id"])
-            ).fetchone()
-            item["last_used_at"] = recent["last_used_at"] if recent else None
+            item["is_favorite"] = bool(item["is_favorite"])
             result.append(item)
     return result
 
 
+@app.post("/api/v1/planned-routes", status_code=201)
+def save_planned_route(route: PlannedRouteIn, me: dict = Depends(current_user)) -> dict:
+    stamp = utc_now()
+    points = [p.model_dump() for p in route.points]
+    with closing(connection()) as db:
+        with db:
+            track = db.execute("INSERT INTO recorded_tracks(recorder_id, points, created_at) VALUES (?, ?, ?)",
+                               (me["id"], json.dumps(points), stamp))
+            saved = db.execute(
+                "INSERT INTO routes(name, recorder_id, track_id, origin, destination, route_type, created_at, waypoints, distance_meters, duration_seconds) VALUES (?, ?, ?, ?, ?, 'drawn', ?, ?, ?, ?)",
+                (route.name.strip(), me["id"], track.lastrowid, points[0].get("label") or "Start", points[-1].get("label") or "Destination", stamp, json.dumps(points), route.distance_meters, route.duration_seconds))
+            db.execute("UPDATE routes SET point_count=? WHERE id=?", (len(points), saved.lastrowid))
+    return {"id": saved.lastrowid, "name": route.name.strip(), "route_type": "drawn", "created_at": stamp}
+
+
 @app.get("/api/v1/routes/{route_id}")
-def get_route(route_id: int) -> dict:
+def get_route(route_id: int, me: dict = Depends(current_user)) -> dict:
     with closing(connection()) as db:
         row = db.execute(
             """
             SELECT r.id, r.name, r.recorder_id, r.track_id, r.origin, r.destination, r.route_type, r.created_at,
                    r.hub_latitude, r.hub_longitude, u.name AS recorder_name,
-                   t.organic_maps_track_id, t.points
+                   t.organic_maps_track_id, t.points, r.waypoints, r.distance_meters AS saved_distance, r.duration_seconds AS saved_duration
             FROM routes r LEFT JOIN recorded_tracks t ON t.id = r.track_id
             JOIN users u ON u.id = r.recorder_id
             WHERE r.id = ?
@@ -511,6 +615,11 @@ def get_route(route_id: int) -> dict:
     route["points"] = json.loads(raw_points) if raw_points else []
     route["point_count"] = len(route["points"])
     route["distance_meters"], route["duration_seconds"] = route_stats(route["points"])
+    definition = route.pop("waypoints")
+    if definition:
+        route["points"] = json.loads(definition)
+        route["distance_meters"] = route.pop("saved_distance")
+        route["duration_seconds"] = route.pop("saved_duration")
     return route
 
 
@@ -606,6 +715,8 @@ def share_route(route_id: int, share: RouteShareIn, me: dict = Depends(current_u
     caller_owns(me, share.driver_id)
     with closing(connection()) as db:
         route, actor = route_actor(db, route_id, share.driver_id)
+        if me["role"] != "admin" and route["recorder_id"] != me["id"]:
+            raise HTTPException(status_code=403, detail="only the route owner or admin can share this route")
         if share.recipient_id is not None and db.execute("SELECT id FROM users WHERE id = ?", (share.recipient_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail="recipient not found")
         payload = {"route_id": route_id, "shared_by": share.driver_id, "recipient_id": share.recipient_id}
@@ -636,6 +747,11 @@ def start_ride(ride: RideIn, me: dict = Depends(current_user)) -> dict:
                 VALUES (?, ?, ?, ?, 'active', ?)
                 """,
                 (ride.driver_id, ride.route_id, ride.vehicle_type, ride.vehicle_number, started_at),
+            )
+            db.execute(
+                "INSERT INTO route_recents(user_id,route_id,last_used_at) VALUES (?,?,?) "
+                "ON CONFLICT(user_id,route_id) DO UPDATE SET last_used_at=excluded.last_used_at",
+                (ride.driver_id, ride.route_id, started_at),
             )
             db.commit()
         except sqlite3.IntegrityError:
@@ -706,7 +822,8 @@ def _finish_ride(db: sqlite3.Connection, ride_id: int, driver_id: int, outcome: 
 
 @app.post("/api/v1/rides/{ride_id}/end")
 def end_ride(ride_id: int, body: EndRideIn, me: dict = Depends(current_user)) -> dict:
-    caller_owns(me, body.driver_id)
+    if me["role"] != "admin":
+        caller_owns(me, body.driver_id)
     with closing(connection()) as db:
         ride = db.execute("SELECT driver_id, status FROM rides WHERE id = ?", (ride_id,)).fetchone()
         if ride is None:
@@ -718,7 +835,8 @@ def end_ride(ride_id: int, body: EndRideIn, me: dict = Depends(current_user)) ->
 
 @app.post("/api/v1/rides/{ride_id}/arrive")
 def arrive_ride(ride_id: int, body: ArriveIn, me: dict = Depends(current_user)) -> dict:
-    caller_owns(me, body.driver_id)
+    if me["role"] != "admin":
+        caller_owns(me, body.driver_id)
     with closing(connection()) as db:
         ride = db.execute("SELECT driver_id, route_id, status FROM rides WHERE id = ?", (ride_id,)).fetchone()
         if ride is None:

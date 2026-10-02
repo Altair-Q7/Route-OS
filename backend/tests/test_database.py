@@ -120,6 +120,6 @@ def test_routes_list_orders_by_created_at_descending():
         with closing(connection()) as db:
             db.execute("UPDATE routes SET created_at = ? WHERE id = ?", (backdated, second_id))
             db.commit()
-        listed = client.get("/api/v1/routes").json()
+        listed = client.get("/api/v1/routes", headers=headers).json()
         positions = {route["id"]: index for index, route in enumerate(listed)}
         assert positions[first_id] < positions[second_id]
