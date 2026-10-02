@@ -215,7 +215,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         setState(() => navigation = Map<String, dynamic>.from(data as Map));
       case 'navigation.stopped':
         planner.state = PlannerState.drawing;
-        setState(() => navigation = null);
+        setState(() {
+          navigation = null;
+          page = 'home';
+        });
       case 'recording.started':
         setState(() => recording = true);
       case 'recording.stopped':
@@ -451,7 +454,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     }
     try {
       await request('ride.end');
-      setState(() => navigation = null);
+      setState(() {
+        navigation = null;
+        page = 'home';
+      });
+      await Bridge.call('draft.save', {...planner.json(), 'ui_page': page});
       await refresh();
     } catch (_) {}
   }
