@@ -361,7 +361,7 @@ public class NavigationService extends Service implements LocationListener
             .put("longitude", location.getLongitude());
         if (location.hasSpeed()) body.put("speed_mps", Math.max(0, location.getSpeed()));
         if (location.hasBearing()) body.put("bearing", Math.max(0, Math.min(360, location.getBearing())));
-        postRouteOs("/api/v1/rides/" + rideId + "/locations", body);
+        postRouteOs(this, "/api/v1/rides/" + rideId + "/locations", body);
       }
       catch (Exception e) { Logger.w(TAG, "RouteOS live location upload failed: " + e.getMessage()); }
     }, "routeos-live-location").start();

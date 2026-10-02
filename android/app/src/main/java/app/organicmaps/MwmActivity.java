@@ -23,6 +23,8 @@ import android.location.Location;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.view.KeyEvent;
@@ -71,6 +73,8 @@ import app.organicmaps.bookmarks.BookmarkCategoriesActivity;
 import app.organicmaps.downloader.DownloaderActivity;
 import app.organicmaps.downloader.MapManagerHelper;
 import app.organicmaps.downloader.OnmapDownloader;
+import app.organicmaps.sdk.downloader.CountryItem;
+import app.organicmaps.sdk.downloader.MapManager;
 import app.organicmaps.editor.EditorActivity;
 import app.organicmaps.editor.FeatureCategoryActivity;
 import app.organicmaps.editor.OsmLoginActivity;
@@ -416,6 +420,28 @@ public class MwmActivity extends BaseMwmFragmentActivity
       else
         showRouteOsHomeOverlay();
     }
+
+    if (intent.getBooleanExtra("routeos_home", false) || routeOsEntry)
+      startRouteOsLocation();
+  }
+
+  /**
+   * Asks for a GPS fix when RouteOS opens the map. The engine starts with location updates
+   * switched off, and RouteOS hides the Organic Maps position chooser that would normally
+   * turn them back on, so without this a driver never gets a position.
+   * Deferred until the engine exists, because the mode is undefined before then.
+   */
+  private void startRouteOsLocation()
+  {
+    new Handler(Looper.getMainLooper()).post(() -> {
+      if (!Map.isEngineCreated())
+        return;
+      if (LocationState.getMode() != LocationState.NOT_FOLLOW_NO_POSITION)
+        return;
+      if (!LocationUtils.checkLocationPermission(this))
+        return;
+      LocationState.nativeSwitchToNextMode();
+    });
   }
 
   private void setOrganicChromeVisible(boolean visible)
@@ -430,7 +456,9 @@ public class MwmActivity extends BaseMwmFragmentActivity
     {
       // Organic Maps only ever re-enters RouteOS, so its own panels stay retired once hidden.
       findViewById(R.id.toolbar).setVisibility(View.GONE);
-      findViewById(R.id.onmap_downloader).setVisibility(View.GONE);
+      // The position chooser is replaced by the RouteOS locate button; the map downloader is not,
+      // because it is the only way to fetch regional data and the world map alone renders blank
+      // once the driver zooms in.
       findViewById(R.id.position_chooser).setVisibility(View.GONE);
     }
     if (mOnmapDownloader != null)
@@ -456,7 +484,48 @@ public class MwmActivity extends BaseMwmFragmentActivity
     FrameLayout.LayoutParams headerParams = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 82));
     headerParams.gravity = android.view.Gravity.TOP; headerParams.setMargins(RouteOsUi.dp(this, 14), RouteOsUi.dp(this, 34), RouteOsUi.dp(this, 14), 0);
     overlay.addView(header, headerParams);
+    overlay.addView(routeOsLocateButton());
     return overlay;
+  }
+
+  /**
+   * RouteOS hides the Organic Maps position chooser, so location has to be re-enabled from here.
+   * The engine starts in NOT_FOLLOW_NO_POSITION and refuses to start updates in that mode,
+   * so a driver would otherwise never get a GPS fix.
+   */
+  private TextView routeOsLocateButton()
+  {
+    TextView button = RouteOsUi.text(this, "GPS", 15, Color.WHITE, true);
+    button.setGravity(android.view.Gravity.CENTER);
+    button.setContentDescription("Locate me");
+    button.setBackground(RouteOsUi.background(Color.argb(238, 17, 25, 35), RouteOsUi.dp(this, 30), RouteOsUi.STROKE));
+    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(RouteOsUi.dp(this, 56), RouteOsUi.dp(this, 56));
+    params.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.END;
+    params.setMargins(0, 0, RouteOsUi.dp(this, 16), RouteOsUi.dp(this, 104));
+    button.setLayoutParams(params);
+    RouteOsUi.pressable(button, this::toggleRouteOsLocation);
+    return button;
+  }
+
+  /** Cycles the my-position mode; from the initial state this starts looking for a fix. */
+  private void toggleRouteOsLocation()
+  {
+    if (!Map.isEngineCreated())
+    {
+      Toast.makeText(this, "Map is still starting up", Toast.LENGTH_SHORT).show();
+      return;
+    }
+    int mode = LocationState.getMode();
+    if (mode == LocationState.NOT_FOLLOW_NO_POSITION)
+    {
+      Toast.makeText(this, "Looking for your location...", Toast.LENGTH_SHORT).show();
+      LocationState.nativeSwitchToNextMode();
+      return;
+    }
+    // Already receiving updates; a second tap advances the follow mode once. Do not loop here:
+    // mode changes are applied asynchronously, so polling getMode() on the main thread can ANR.
+    LocationState.nativeSwitchToNextMode();
+    Toast.makeText(this, "Location mode updated", Toast.LENGTH_SHORT).show();
   }
 
   private void addRouteOsOverlay(FrameLayout overlay)
@@ -570,13 +639,64 @@ public class MwmActivity extends BaseMwmFragmentActivity
     draw.setOnClickListener(v -> showRouteOsDrawOverlay());
     TextView routes = routeOsButton("Saved Routes", Color.rgb(21, 43, 52));
     routes.setOnClickListener(v -> startActivity(new Intent(this, RouteOsRoutesActivity.class)));
+    TextView download = routeOsButton("Download map", Color.rgb(21, 43, 52));
+    download.setOnClickListener(v -> downloadRouteOsMap());
     actions.addView(home, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 1, this));
     actions.addView(draw, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 1, this));
     actions.addView(routes, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 1, this));
+    actions.addView(download, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 1, this));
     actions.setPadding(RouteOsUi.dp(this, 6), RouteOsUi.dp(this, 6), RouteOsUi.dp(this, 6), RouteOsUi.dp(this, 6));
     actions.setBackground(RouteOsUi.background(Color.argb(248, 8, 17, 24), RouteOsUi.dp(this, 22), RouteOsUi.STROKE));
     FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 72)); params.gravity = android.view.Gravity.BOTTOM; params.setMargins(RouteOsUi.dp(this, 10), 0, RouteOsUi.dp(this, 10), RouteOsUi.dp(this, 18)); overlay.addView(actions, params);
     addRouteOsOverlay(overlay);
+  }
+
+  /**
+   * Fetches the regional map for the driver's current position. RouteOS suppresses the Organic
+   * Maps on-map downloader, so without this the world overview is the only data on the device
+   * and zooming in renders a blank map.
+   */
+  private void downloadRouteOsMap()
+  {
+    if (!Map.isEngineCreated())
+    {
+      Toast.makeText(this, "Map is still starting up", Toast.LENGTH_SHORT).show();
+      return;
+    }
+    // Storage is bound to the main thread (its methods CHECK CalledOnOriginalThread), so the
+    // country lookup must run here. A background thread aborts the process with SIGABRT.
+    runOnUiThread(() -> {
+      Location current = MwmApplication.from(this).getLocationHelper().getSavedLocation();
+      if (current == null)
+      {
+        Toast.makeText(this, "Waiting for GPS before the area map can be found", Toast.LENGTH_LONG).show();
+        return;
+      }
+      String countryId = MapManager.nativeFindCountry(current.getLatitude(), current.getLongitude());
+      if (countryId == null || countryId.isEmpty())
+      {
+        Toast.makeText(this, "No downloadable map covers this area", Toast.LENGTH_LONG).show();
+        return;
+      }
+      CountryItem country = CountryItem.fill(countryId);
+      if (country != null && country.present)
+      {
+        Toast.makeText(this, "Area map is already downloaded", Toast.LENGTH_SHORT).show();
+        return;
+      }
+      if (!MapManager.nativeHasSpaceToDownloadCountry(countryId))
+      {
+        Toast.makeText(this, "Not enough storage for the area map", Toast.LENGTH_LONG).show();
+        return;
+      }
+      // Tapping the button is explicit consent to use mobile data: without this the downloader
+      // fails instantly on a WWAN connection without even attempting a request.
+      if (!MapManager.nativeIsDownloadOn3gEnabled())
+        MapManager.nativeEnableDownloadOn3g();
+      MapManagerHelper.startDownload(this, countryId);
+      String name = country == null ? countryId : country.name;
+      Toast.makeText(this, "Downloading " + name, Toast.LENGTH_LONG).show();
+    });
   }
 
   private void showRouteOsAdminOverlay()

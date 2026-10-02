@@ -17,8 +17,8 @@ import org.json.JSONObject;
 
 public final class RouteOsApi {
   private static final String HEADER_TOKEN = "X-RouteOS-Token";
-  /** Emulator loopback to the host PC. Real devices override this via {@link #setBaseUrl}. */
-  private static final String DEFAULT_API = "http://10.0.2.2:8000";
+  /** Host loopback, reached on a device or emulator via `adb reverse tcp:8000 tcp:8000`. */
+  private static final String DEFAULT_API = "http://127.0.0.1:8000";
   private RouteOsApi() {}
 
   public static String baseUrl(@NonNull Context context) {
