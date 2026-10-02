@@ -114,7 +114,14 @@ dependencies {
 
 // TODO: Running lint task triggers native build. Find a better solution.
 project.afterEvaluate {
-  boolean isLintRun = project.gradle.startParameter.taskNames.any { it.toLowerCase().contains('lint') }
+  // A combined assemble + lint invocation must compile changed JNI code. Skipping
+  // it there can package a stale .so against new Java native declarations.
+  def requestedTasks = project.gradle.startParameter.taskNames
+  boolean isLintRun = requestedTasks.any { it.toLowerCase().contains('lint') } &&
+      requestedTasks.every {
+        def name = it.tokenize(':').last().toLowerCase()
+        name.startsWith('lint') || name == 'clean'
+      }
 
   if (isLintRun) {
     tasks.findAll { task ->
