@@ -49,6 +49,9 @@ Organic Maps supports **100 intermediate points + start + destination**, not unl
 The client and server enforce that actual engine limit. Optimise previews use geographic
 2-opt ordering with fixed endpoints, not a claim of optimal driving time. OM computes all roads.
 Moving is select-point → Move on map → tap the new position; reordering uses the point list.
+The map keeps Organic Maps' native start/finish symbols and numbered intermediate markers;
+the Flutter point list numbers every point, including start and destination. Selection is
+translated between those two numbering conventions by the bridge.
 
 Recorded routes retain their complete GPS track on the backend and import that original track
 into Organic Maps for display. For navigation, recordings exceeding the route-point limit use
