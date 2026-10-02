@@ -16,7 +16,15 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 public final class RouteOsApi {
-  private static final String HEADER_TOKEN = "X-RouteOS-Token";
+  public static final class ApiException extends IOException {
+    public final int status;
+    ApiException(int status, String message) { super(message); this.status=status; }
+  }
+  private static ApiException httpError(HttpURLConnection connection) throws IOException {
+    String body=errorBody(connection);
+    try { Object detail=new JSONObject(body).opt("detail"); if(detail!=null)body=detail.toString(); } catch(Exception ignored) {}
+    return new ApiException(connection.getResponseCode(),body);
+  }
   /** Host loopback, reached on a device or emulator via `adb reverse tcp:8000 tcp:8000`. */
   private static final String DEFAULT_API = "http://127.0.0.1:8000";
   private RouteOsApi() {}
@@ -24,28 +32,47 @@ public final class RouteOsApi {
   public static String baseUrl(@NonNull Context context) {
     String saved = context.getSharedPreferences("routeos", Context.MODE_PRIVATE)
         .getString("api_base_url", null);
-    return saved == null || saved.isEmpty() ? DEFAULT_API : saved;
+    if (saved != null && !saved.isEmpty()) { validateBaseUrl(context, saved); return saved; }
+    if ((context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) return DEFAULT_API;
+    throw new IllegalStateException("Configure the RouteOS HTTPS server before signing in");
   }
 
   public static void setBaseUrl(@NonNull Context context, @NonNull String baseUrl) {
+    baseUrl = baseUrl.trim();
+    validateBaseUrl(context, baseUrl);
     context.getSharedPreferences("routeos", Context.MODE_PRIVATE).edit()
-        .putString("api_base_url", baseUrl.trim()).apply();
+        .putString("api_base_url", baseUrl).apply();
+  }
+
+  private static void validateBaseUrl(@NonNull Context context, @NonNull String baseUrl) {
+    android.net.Uri uri = android.net.Uri.parse(baseUrl);
+    if (uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null)
+      throw new IllegalArgumentException("Enter a valid RouteOS server URL without credentials, query or fragment");
+    boolean localDebug = (context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        && "http".equals(uri.getScheme()) && ("127.0.0.1".equals(uri.getHost()) || "10.0.2.2".equals(uri.getHost()));
+    if (!"https".equals(uri.getScheme()) && !localDebug) throw new IllegalArgumentException("RouteOS requires HTTPS");
   }
 
   private static String token(@NonNull Context context) {
-    return context.getSharedPreferences("routeos", Context.MODE_PRIVATE)
-        .getString("auth_token", null);
+    return RouteOsCredentials.read(context);
   }
 
   public static JSONObject login(@NonNull Context context, @NonNull String name) throws Exception {
-    JSONObject user = post(context, "/api/v1/auth/login", new JSONObject().put("name", name.trim()));
+    return login(context, name, null);
+  }
+
+  public static JSONObject login(@NonNull Context context, @NonNull String name, String password) throws Exception {
+    var prefs=context.getSharedPreferences("routeos",0);
+    if(prefs.getLong("active_ride_id",0)>0 && !name.equalsIgnoreCase(prefs.getString("driver_name","")))
+      throw new IllegalStateException("Sign in as the active ride's driver, or end the ride before switching accounts");
+    JSONObject user = post(context, "/api/v1/auth/login", new JSONObject().put("name", name.trim()).put("password", password));
     android.content.SharedPreferences.Editor editor =
         context.getSharedPreferences("routeos", Context.MODE_PRIVATE).edit()
             .putLong("driver_id", user.getLong("id"))
             .putString("driver_name", user.getString("name"))
             .putString("role", user.getString("role"));
     String freshToken = user.optString("auth_token", null);
-    if (freshToken != null && !freshToken.isEmpty()) editor.putString("auth_token", freshToken);
+    if (freshToken != null && !freshToken.isEmpty()) RouteOsCredentials.store(context, freshToken);
     editor.apply();
     return user;
   }
@@ -167,6 +194,9 @@ public final class RouteOsApi {
   public static JSONArray getActiveRides(@NonNull Context context) throws Exception {
     return getArray(context, "/api/v1/rides/active");
   }
+  public static JSONObject getOwnActiveRide(@NonNull Context context) throws Exception {
+    return getObject(context, "/api/v1/drivers/"+context.getSharedPreferences("routeos",0).getLong("driver_id",0)+"/active-ride");
+  }
 
   public static JSONObject getDriverActiveRide(@NonNull Context context) throws Exception {
     long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
@@ -176,10 +206,11 @@ public final class RouteOsApi {
   public static void clearActiveRide(@NonNull Context context) {
     context.getSharedPreferences("routeos", Context.MODE_PRIVATE).edit()
         .remove("active_ride_id").remove("active_route_id").remove("active_route_name")
-        .remove("active_destination_lat").remove("active_destination_lon").apply();
+        .remove("active_destination_lat").remove("active_destination_lon").remove("ride_arrived").apply();
   }
 
   public static void logout(@NonNull Context context) {
+    RouteOsCredentials.clear(context);
     android.content.SharedPreferences prefs =
         context.getSharedPreferences("routeos", Context.MODE_PRIVATE);
     String baseUrl = prefs.getString("api_base_url", null);
@@ -211,7 +242,7 @@ public final class RouteOsApi {
   private static void attachToken(@NonNull Context context, HttpURLConnection connection) {
     String authToken = token(context);
     if (authToken != null && !authToken.isEmpty())
-      connection.setRequestProperty(HEADER_TOKEN, authToken);
+      connection.setRequestProperty("Authorization", "Bearer " + authToken);
   }
 
   private static JSONArray getArray(@NonNull Context context, String path) throws Exception {
@@ -220,7 +251,7 @@ public final class RouteOsApi {
       connection.setConnectTimeout(3000);
       connection.setReadTimeout(5000);
       attachToken(context, connection);
-      if (connection.getResponseCode() != 200) throw new IllegalStateException(errorBody(connection));
+      if (connection.getResponseCode() != 200) throw httpError(connection);
       return new JSONArray(readFully(connection.getInputStream()));
     } finally {
       connection.disconnect();
@@ -233,14 +264,14 @@ public final class RouteOsApi {
       connection.setConnectTimeout(3000);
       connection.setReadTimeout(5000);
       attachToken(context, connection);
-      if (connection.getResponseCode() != 200) throw new IllegalStateException(errorBody(connection));
+      if (connection.getResponseCode() != 200) throw httpError(connection);
       return new JSONObject(readFully(connection.getInputStream()));
     } finally {
       connection.disconnect();
     }
   }
 
-  private static JSONObject post(@NonNull Context context, String path, JSONObject body) throws Exception {
+  public static JSONObject post(@NonNull Context context, String path, JSONObject body) throws Exception {
     HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl(context) + path).openConnection();
     try {
       connection.setRequestMethod("POST");
@@ -253,7 +284,7 @@ public final class RouteOsApi {
       connection.setDoOutput(true);
       byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
       try (OutputStream output = connection.getOutputStream()) { output.write(data); }
-      if (connection.getResponseCode() >= 400) throw new IllegalStateException(errorBody(connection));
+      if (connection.getResponseCode() >= 400) throw httpError(connection);
       return new JSONObject(readFully(connection.getInputStream()));
     } finally {
       connection.disconnect();
@@ -271,7 +302,7 @@ public final class RouteOsApi {
       connection.setConnectTimeout(3000);
       connection.setReadTimeout(5000);
       attachToken(context, connection);
-      if (connection.getResponseCode() >= 400) throw new IllegalStateException(errorBody(connection));
+      if (connection.getResponseCode() >= 400) throw httpError(connection);
       return new JSONObject(readFully(connection.getInputStream()));
     } finally {
       connection.disconnect();
@@ -288,7 +319,7 @@ public final class RouteOsApi {
       connection.setReadTimeout(5000);
       connection.setDoOutput(true);
       try (OutputStream output = connection.getOutputStream()) { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
-      if (connection.getResponseCode() >= 400) throw new IllegalStateException(errorBody(connection));
+      if (connection.getResponseCode() >= 400) throw httpError(connection);
       return new JSONObject(readFully(connection.getInputStream()));
     } finally {
       connection.disconnect();

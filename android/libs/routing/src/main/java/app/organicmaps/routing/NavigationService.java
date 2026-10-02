@@ -297,6 +297,13 @@ public class NavigationService extends Service implements LocationListener
     // This check should be done after playTurnNotifications() to play the last turn notification.
     if (Framework.nativeIsRouteFinished())
     {
+      // RouteOS arrival is not consent to end the business ride. Keep location reporting alive
+      // until the explicit End Ride action succeeds on the server.
+      if (getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0) != 0)
+      {
+        getSharedPreferences("routeos", MODE_PRIVATE).edit().putBoolean("ride_arrived", true).apply();
+        return;
+      }
       routingController.cancel();
       arriveRouteOsRide();
       sOrganicMaps.getLocationHelper().restartWithNewMode();
@@ -410,24 +417,9 @@ public class NavigationService extends Service implements LocationListener
         .remove("active_route_name").remove("active_destination_lat").remove("active_destination_lon").apply();
   }
 
-  private static String routeOsBaseUrl(@NonNull Context context)
-  {
-    String saved = context.getSharedPreferences("routeos", MODE_PRIVATE).getString("api_base_url", null);
-    return saved == null || saved.isEmpty() ? "http://10.0.2.2:8000" : saved;
-  }
-
   private static void postRouteOs(@NonNull Context context, @NonNull String path,
                                   @NonNull JSONObject body) throws Exception
   {
-    HttpURLConnection connection =
-        (HttpURLConnection) new URL(routeOsBaseUrl(context) + path).openConnection();
-    connection.setRequestMethod("POST"); connection.setRequestProperty("Content-Type", "application/json");
-    String token = context.getSharedPreferences("routeos", MODE_PRIVATE).getString("auth_token", null);
-    if (token != null && !token.isEmpty()) connection.setRequestProperty("X-RouteOS-Token", token);
-    connection.setConnectTimeout(3000); connection.setReadTimeout(5000); connection.setDoOutput(true);
-    try (OutputStream output = connection.getOutputStream())
-    { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
-    int code = connection.getResponseCode(); connection.disconnect();
-    if (code >= 400) throw new IllegalStateException("HTTP " + code);
+    app.routeos.RouteOsApi.post(context, path, body);
   }
 }
