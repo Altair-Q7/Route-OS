@@ -16,6 +16,12 @@ public class TrackRecorder
 
   public static native boolean nativeIsTrackRecordingEnabled();
 
+  /** Complete finalized OM recording: lat, lon, epoch seconds, altitude for each point. */
+  public static native double[] nativeRouteOsGetRecordedPoints();
+
+  /** OM's simplification chooses routing anchors; the original GPS recording is unchanged. */
+  public static native int[] nativeRouteOsTrackWaypointIndices(double[] latitudeLongitude);
+
   public static native void nativeSetTrackRecordingStatsListener(TrackRecorder.TrackRecordingUpdateHandler listener);
 
   public static native ElevationInfo nativeGetElevationInfo();

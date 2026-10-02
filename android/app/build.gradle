@@ -214,6 +214,7 @@ afterEvaluate {
 }
 
 dependencies {
+  implementation 'app.routeos.routeos_shell:flutter_release:1'
   implementation project(':libs:api')
   implementation project(':libs:branding')
   implementation project(':libs:downloader')

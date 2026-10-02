@@ -240,6 +240,64 @@ public class MwmActivity extends BaseMwmFragmentActivity
   private RouteOsAdminOverlay mRouteOsAdmin;
   @Nullable
   private RouteOsNavigationOverlay mRouteOsNavigation;
+  private app.routeos.bridge.RouteOsFlutterHost mRouteOsFlutter;
+  private static final String STATE_ROUTEOS_FLUTTER = "routeos_flutter_visible";
+  private boolean mRestoreRouteOsFlutter;
+
+  private void showRouteOsFlutter()
+  {
+    setOrganicChromeVisible(false);
+    if (mRouteOsFlutter == null)
+    {
+      if (!isRouteOsRideActive()) { RoutingController.get().cancel(); RouteOsTrackPreview.clear(this); }
+      mRouteOsFlutter = new app.routeos.bridge.RouteOsFlutterHost(this, mMapController.getView());
+      bindRouteOsFlutterRecordingStats();
+      FrameLayout root = new FrameLayout(this);
+      root.setBackgroundColor(Color.rgb(8, 18, 25));
+      root.addView(mRouteOsFlutter.getView(), new FrameLayout.LayoutParams(-1, -1));
+      addRouteOsOverlay(root);
+      ViewCompat.requestApplyInsets(mRouteOsFlutter.getView());
+    }
+  }
+
+  public void routeOsFlutterStartRide(long rideId)
+  {
+    if (getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0) != rideId || rideId <= 0)
+      return;
+    mRouteOsActiveRideId = rideId;
+    RoutingController.get().start();
+  }
+
+  public void routeOsFlutterFinishRide()
+  {
+    if (mRouteOsFlutter != null) mRouteOsFlutter.rideStopped();
+    RoutingController.get().cancel();
+    mRouteOsActiveRideId = 0;
+    RouteOsApi.clearActiveRide(this);
+    if (mRouteOsFlutter != null) mRouteOsFlutter.emit("navigation.stopped", java.util.Map.of());
+  }
+
+  public void routeOsFlutterRecord()
+  {
+    if (startTrackRecording() && mRouteOsFlutter != null)
+    {
+      mRouteOsFlutter.emit("recording.started", java.util.Map.of());
+      bindRouteOsFlutterRecordingStats();
+    }
+  }
+
+  private void bindRouteOsFlutterRecordingStats()
+  {
+    if (mRouteOsFlutter == null || !TrackRecorder.nativeIsTrackRecordingEnabled()) return;
+    TrackRecorder.nativeSetTrackRecordingStatsListener(stats -> {
+      if (mRouteOsFlutter != null) mRouteOsFlutter.emit("recording.progress", java.util.Map.of("distance_meters",stats.getLength(),"duration_seconds",stats.getDuration()));
+    });
+  }
+
+  public void routeOsFlutterCancelRecording()
+  {
+    cancelRouteOsRecording();
+  }
 
   public static Intent createShowMapIntent(@NonNull Context context, @Nullable String countryId)
   {
@@ -281,6 +339,12 @@ public class MwmActivity extends BaseMwmFragmentActivity
       saveAndStopTrackRecording();
     }
 
+    if (mRestoreRouteOsFlutter)
+    {
+      showRouteOsFlutter();
+      startRouteOsLocation();
+      mRestoreRouteOsFlutter = false;
+    }
     processIntent();
     migrateOAuthCredentials();
   }
@@ -297,6 +361,12 @@ public class MwmActivity extends BaseMwmFragmentActivity
     if (intent == null || mIntentConsumed)
       return;
     mIntentConsumed = true;
+
+    if (intent.getBooleanExtra("routeos_flutter", false))
+    {
+      showRouteOsFlutter();
+      return;
+    }
 
     if (intent.getBooleanExtra("routeos_home", false))
     {
@@ -408,6 +478,12 @@ public class MwmActivity extends BaseMwmFragmentActivity
     }
 
     boolean routeOsEntry = Intent.ACTION_MAIN.equals(intent.getAction()) || intent.getAction() == null;
+    if (routeOsEntry && !intent.getBooleanExtra("routeos_skip_home", false) && !intent.getBooleanExtra("routeos_native", false))
+    {
+      showRouteOsFlutter();
+      startRouteOsLocation();
+      return;
+    }
     if (routeOsEntry && !intent.getBooleanExtra("routeos_skip_home", false))
     {
       setOrganicChromeVisible(false);
@@ -551,7 +627,20 @@ public class MwmActivity extends BaseMwmFragmentActivity
   /** RouteOS map-first home: the native map stays visible under the RouteOS command surface. */
   private void showRouteOsHomeOverlay()
   {
+    if (mRouteOsFlutter != null)
+    {
+      mRouteOsFlutter.emit("recording.stopped", java.util.Map.of());
+      return;
+    }
     setOrganicChromeVisible(false);
+    // Home is the non-routing surface. Clear any preview/routing geometry left by Draw Route
+    // before rebuilding the overlay; otherwise the last preview remains as an unexplained line
+    // over the map even though no ride or destination is active.
+    if (!isRouteOsRideActive())
+    {
+      RoutingController.get().cancel();
+      RouteOsTrackPreview.clear(this);
+    }
     if (mRouteOsHome == null)
     {
       mRouteOsHome = new RouteOsHomeOverlay(this, new RouteOsHomeOverlay.Host()
@@ -1027,7 +1116,11 @@ public class MwmActivity extends BaseMwmFragmentActivity
   protected void prepareIntentForCoreRestart(@NonNull Intent intent, @Nullable Bundle savedInstanceState)
   {
     if (savedInstanceState != null)
+    {
       intent.putExtra(EXTRA_CONSUMED, savedInstanceState.getBoolean(EXTRA_CONSUMED, false));
+      if (savedInstanceState.getBoolean(STATE_ROUTEOS_FLUTTER, false))
+        intent.putExtra("routeos_flutter", true);
+    }
   }
 
   /**
@@ -1052,6 +1145,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
     super.onSafeCreate(savedInstanceState);
 
     mIntentConsumed = isIntentConsumed(savedInstanceState, getIntent());
+    mRestoreRouteOsFlutter = savedInstanceState != null
+        && savedInstanceState.getBoolean(STATE_ROUTEOS_FLUTTER, false);
 
     setContentView(R.layout.activity_map);
     makeNavigationBarTransparentInLightMode();
@@ -1438,6 +1533,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
     outState.putBoolean(POWER_SAVE_DISCLAIMER_SHOWN, mPowerSaveDisclaimerShown);
     outState.putBoolean(EXTRA_CONSUMED, mIntentConsumed);
+    outState.putBoolean(STATE_ROUTEOS_FLUTTER, mRouteOsFlutter != null);
     super.onSaveInstanceState(outState);
   }
 
@@ -1497,6 +1593,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
   protected void onResume()
   {
     super.onResume();
+    if (mRouteOsFlutter != null) mRouteOsFlutter.resume();
     ThemeSwitcher.INSTANCE.synchronizeApplicationTheme();
     ThemeSwitcher.INSTANCE.synchronizeMapStyle(this, mMapController.isRenderingActive());
     makeNavigationBarTransparentInLightMode();
@@ -1530,6 +1627,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   protected void onPause()
   {
+    if (mRouteOsFlutter != null) mRouteOsFlutter.pause();
     if (mOnmapDownloader != null)
       mOnmapDownloader.onPause();
     MwmApplication.from(this).getSensorHelper().removeListener(this);
@@ -1577,6 +1675,10 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   protected void onSafeDestroy()
   {
+    if (mRouteOsFlutter != null) {
+      TrackRecorder.nativeSetTrackRecordingStatsListener(null);
+      mRouteOsFlutter.destroy(); mRouteOsFlutter = null;
+    }
     if (mRouteOsAdmin != null)
     {
       mRouteOsAdmin.stop();
@@ -1625,6 +1727,11 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   public boolean handleBackPress()
   {
+    if (mRouteOsFlutter != null)
+    {
+      mRouteOsFlutter.back();
+      return true;
+    }
     if (isRouteOsRideActive())
     {
       if (mRouteOsEndingRide)
@@ -1660,6 +1767,11 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   public void onPlacePageActivated(@NonNull PlacePageData data)
   {
+    if (mRouteOsFlutter != null && data instanceof MapObject object && object.getRoutePointInfo()!=null)
+    {
+      mRouteOsFlutter.pointSelected(object.getRoutePointInfo());
+      return;
+    }
     // This will open the place page
     mPlacePageViewModel.setMapObject((MapObject) data);
   }
@@ -2002,6 +2114,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   public void onBuiltRoute()
   {
+    if (mRouteOsFlutter != null) mRouteOsFlutter.routeReady();
     enforceRouteOsChrome();
     if (mRouteOsPendingRideStart)
     {
@@ -2016,6 +2129,11 @@ public class MwmActivity extends BaseMwmFragmentActivity
   {
     // A failed build must never leave a deferred RouteOS ride start armed for a later route.
     mRouteOsPendingRideStart = false;
+    if (mRouteOsFlutter != null)
+    {
+      mRouteOsFlutter.routeFailed(lastMissingMaps.length > 0 ? "Map data required: download the regional map first" : "No road route found. Move a point closer to a road.", lastResultCode);
+      return;
+    }
     if (mRouteOsUiActive)
     {
       // RouteOS screens never show the Organic Maps missing-maps dialog: pull the data down
@@ -2211,6 +2329,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
     final RoutingInfo info = Framework.nativeGetRouteFollowingInfo();
     mNavigationController.update(info);
+    if (mRouteOsFlutter != null) mRouteOsFlutter.progress(location, info);
     if (mRouteOsNavigation != null && mRouteOsUiActive)
       mRouteOsNavigation.update(info, location);
   }
@@ -2755,11 +2874,18 @@ public class MwmActivity extends BaseMwmFragmentActivity
         .setPositiveButton(android.R.string.ok, (dialog, which) -> {
           String routeName = name.getText().toString().trim();
           if (routeName.isEmpty()) routeName = "Recorded route";
+          final double[] nativePoints = TrackRecorder.nativeRouteOsGetRecordedPoints();
           TrackRecorder.nativeSetTrackRecordingStatsListener(null);
           TrackRecorder.nativeSaveTrackRecordingWithName(routeName);
           stopTrackRecording();
           final String savedName = routeName;
-          final ArrayList<Location> points = RouteOsRecordingSession.finish();
+          RouteOsRecordingSession.finish();
+          final ArrayList<Location> points = new ArrayList<>();
+          for (int i=0;i+3<nativePoints.length;i+=4)
+          {
+            Location point=new Location("organicmaps-track");point.setLatitude(nativePoints[i]);point.setLongitude(nativePoints[i+1]);
+            point.setTime((long)(nativePoints[i+2]*1000));point.setAltitude(nativePoints[i+3]);points.add(point);
+          }
           if (points.size() < 2)
           {
             RouteOsRecordingSession.clear();

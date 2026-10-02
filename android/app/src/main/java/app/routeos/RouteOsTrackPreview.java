@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 import app.organicmaps.sdk.bookmarks.data.BookmarkCategory;
 import app.organicmaps.sdk.bookmarks.data.BookmarkManager;
+import java.util.ArrayList;
 import java.io.File;
 
 /**
@@ -21,6 +22,7 @@ import java.io.File;
 public final class RouteOsTrackPreview {
   private static final String PREFS = "routeos";
   private static final String KEY_CATEGORY_ID = "preview_category_id";
+  private static final String KEY_CATEGORY_NAME = "preview_category_name";
   private static final String FILE_PREFIX = "routeos-route-";
 
   private RouteOsTrackPreview() {}
@@ -31,13 +33,21 @@ public final class RouteOsTrackPreview {
    */
   public static void replace(@NonNull Context context, @NonNull File file, long routeId) {
     clear(context);
+    String fileName = file.getName();
+    String categoryName = fileName.substring(0, fileName.lastIndexOf('.'));
+    prefs(context).edit().putString(KEY_CATEGORY_NAME, categoryName).apply();
     BookmarkManager.INSTANCE.loadBookmarksFile(file.getAbsolutePath(), true);
+    retainImported(context, routeId);
+  }
+
+  /** Called again after asynchronous import updates the native category cache. */
+  public static void retainImported(@NonNull Context context, long routeId) {
     long kept = -1;
-    String wanted = FILE_PREFIX + routeId;
-    for (BookmarkCategory category : BookmarkManager.INSTANCE.getCategories()) {
+    String wanted = prefs(context).getString(KEY_CATEGORY_NAME, FILE_PREFIX + routeId);
+    for (BookmarkCategory category : new ArrayList<>(BookmarkManager.INSTANCE.getCategories())) {
       String name = category.getName();
       if (name == null || !name.startsWith(FILE_PREFIX)) continue;
-      if (name.equals(wanted) || name.startsWith(wanted + ".")) {
+      if (name.equals(wanted)) {
         kept = category.getId();
         continue;
       }
@@ -51,8 +61,16 @@ public final class RouteOsTrackPreview {
     long id = prefs(context).getLong(KEY_CATEGORY_ID, -1);
     if (id != -1) {
       deleteQuietly(id);
-      prefs(context).edit().remove(KEY_CATEGORY_ID).apply();
     }
+    // Also sweep previews created before the persisted category id was introduced. This is
+    // important on upgraded installs: a stale category can otherwise keep its polyline visible
+    // even after the current preview and native route plan have been cancelled.
+    for (BookmarkCategory category : new ArrayList<>(BookmarkManager.INSTANCE.getCategories())) {
+      String name = category.getName();
+      if (name != null && name.startsWith(FILE_PREFIX))
+        deleteQuietly(category.getId());
+    }
+    prefs(context).edit().remove(KEY_CATEGORY_ID).remove(KEY_CATEGORY_NAME).apply();
   }
 
   private static void deleteQuietly(long categoryId) {

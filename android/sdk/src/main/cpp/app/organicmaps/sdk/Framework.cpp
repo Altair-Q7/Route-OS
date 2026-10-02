@@ -1155,6 +1155,16 @@ JNIEXPORT jdoubleArray Java_app_organicmaps_sdk_Framework_nativeGetScreenRectCen
   return jLatLon;
 }
 
+JNIEXPORT jdoubleArray Java_app_organicmaps_sdk_Framework_nativeRouteOsPixelToLatLon(JNIEnv * env, jclass,
+                                                                                    jdouble x, jdouble y)
+{
+  auto const point = frm()->P3dtoG(m2::PointD(x, y));
+  double values[] = {mercator::YToLat(point.y), mercator::XToLon(point.x)};
+  auto result = env->NewDoubleArray(2);
+  env->SetDoubleArrayRegion(result, 0, 2, values);
+  return result;
+}
+
 JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeRestoreDownloadQueue(JNIEnv * env, jclass)
 {
   frm()->GetStorage().RestoreDownloadQueue();
@@ -1258,6 +1268,16 @@ JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeRemoveRoute(JNIEnv * env
 JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeFollowRoute(JNIEnv * env, jclass)
 {
   frm()->GetRoutingManager().FollowRoute();
+}
+
+JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeRouteOsShowRouteOverview(JNIEnv *, jclass)
+{
+  auto const & polyline = frm()->GetRoutingManager().GetRoutePolyline();
+  if (polyline.GetSize() < 2)
+    return;
+  auto rect = polyline.GetLimitRect();
+  rect.Scale(1.2);
+  frm()->ShowRect(rect, true /* animation */, true /* useVisibleViewport */);
 }
 
 JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeDisableFollowing(JNIEnv * env, jclass)

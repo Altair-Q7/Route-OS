@@ -4,11 +4,60 @@
 #include "app/organicmaps/sdk/core/jni_helper.hpp"
 
 #include "map/gps_tracker.hpp"
+#include "geometry/mercator.hpp"
+#include "geometry/simplification.hpp"
 
 #include <chrono>
 
 extern "C"
 {
+// Routing anchors only. The canonical recorded track is neither modified nor truncated.
+JNIEXPORT jintArray Java_app_organicmaps_sdk_location_TrackRecorder_nativeRouteOsTrackWaypointIndices(
+    JNIEnv * env, jclass, jdoubleArray coordinates)
+{
+  auto const count = env->GetArrayLength(coordinates) / 2;
+  std::vector<jint> indices;
+  if (count <= 101)
+  {
+    for (jint i = 0; i < count; ++i) indices.push_back(i);
+  }
+  else
+  {
+    std::vector<double> values(count * 2);
+    env->GetDoubleArrayRegion(coordinates, 0, count * 2, values.data());
+    std::vector<m2::PointD> points;
+    points.reserve(count);
+    for (int i = 0; i < count; ++i) points.push_back(mercator::FromLatLon(values[i * 2], values[i * 2 + 1]));
+    double epsilon = 1e-8;
+    do
+    {
+      indices.clear();
+      SimplifyDP(points.begin(), points.end(), epsilon, m2::SquaredDistanceFromSegmentToPoint{},
+                 [&](m2::PointD const & point) { indices.push_back(static_cast<jint>(&point - points.data())); });
+      epsilon *= 4;
+    } while (indices.size() > 101);
+  }
+  auto result = env->NewIntArray(indices.size());
+  if (!indices.empty()) env->SetIntArrayRegion(result, 0, indices.size(), indices.data());
+  return result;
+}
+
+JNIEXPORT jdoubleArray Java_app_organicmaps_sdk_location_TrackRecorder_nativeRouteOsGetRecordedPoints(JNIEnv * env, jclass)
+{
+  auto & tracker = GpsTracker::Instance();
+  auto const count = tracker.Finalize();
+  std::vector<double> points;
+  points.reserve(count * 4);
+  if (count > 0)
+    tracker.ForEachTrackPoint([&points](location::GpsInfo const & point, size_t) {
+      points.insert(points.end(), {point.m_latitude, point.m_longitude, point.m_timestamp, point.m_altitude});
+      return true;
+    });
+  auto result = env->NewDoubleArray(points.size());
+  if (!points.empty()) env->SetDoubleArrayRegion(result, 0, points.size(), points.data());
+  return result;
+}
+
 JNIEXPORT void Java_app_organicmaps_sdk_location_TrackRecorder_nativeStartTrackRecording(JNIEnv * env, jclass clazz)
 {
   frm()->StartTrackRecording();

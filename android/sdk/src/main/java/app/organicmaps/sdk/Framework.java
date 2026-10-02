@@ -229,6 +229,7 @@ public class Framework
   public static native void nativeRemoveRoute();
 
   public static native void nativeFollowRoute();
+  public static native void nativeRouteOsShowRouteOverview();
 
   public static native void nativeDisableFollowing();
 
@@ -284,6 +285,9 @@ public class Framework
                                                 boolean reorderIntermediatePoints);
 
   public static native void nativeRemoveRoutePoints();
+
+  /** Convert a touch in native map pixels using the engine's current camera/projection. */
+  public static native double[] nativeRouteOsPixelToLatLon(double x, double y);
 
   public static native void nativeRemoveRoutePoint(@NonNull RouteMarkType markType, int intermediateIndex);
 
