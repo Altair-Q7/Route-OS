@@ -82,6 +82,56 @@ def test_startup_cleans_orphaned_rows():
         ).fetchone() is None
 
 
+def test_delete_route_with_completed_ride_removes_route_but_preserves_history():
+    with api() as client:
+        user = client.post("/api/v1/users", json={"name": "History Delete Driver"}).json()
+        headers = auth_headers(user)
+        track = client.post(
+            "/api/v1/tracks",
+            json={
+                "recorder_id": user["id"],
+                "points": [
+                    {"latitude": 12.9716, "longitude": 77.5946},
+                    {"latitude": 12.9720, "longitude": 77.5950},
+                ],
+            },
+            headers=headers,
+        ).json()
+        route = client.post(
+            "/api/v1/routes",
+            json={"name": "Completed history route", "recorder_id": user["id"], "track_id": track["id"]},
+            headers=headers,
+        ).json()
+        ride = client.post(
+            "/api/v1/rides",
+            json={"driver_id": user["id"], "route_id": route["id"], "vehicle_type": "car", "vehicle_number": "TEST-1"},
+            headers=headers,
+        ).json()
+        assert client.post(f"/api/v1/rides/{ride['id']}/end", json={"driver_id": user["id"]}, headers=headers).status_code == 200
+
+        deleted = client.delete(f"/api/v1/routes/{route['id']}?driver_id={user['id']}", headers=headers)
+        assert deleted.status_code == 200, deleted.text
+        assert all(item["id"] != route["id"] for item in client.get("/api/v1/routes", headers=headers).json())
+        assert client.get(f"/api/v1/routes/{route['id']}", headers=headers).status_code == 404
+        with closing(connection()) as db:
+            history = db.execute("SELECT route_id, status FROM rides WHERE id = ?", (ride["id"],)).fetchone()
+            assert history["route_id"] == route["id"]
+            assert history["status"] == "ended"
+
+
+def test_active_route_cannot_be_deleted():
+    with api() as client:
+        user = client.post("/api/v1/users", json={"name": "Active Delete Driver"}).json()
+        headers = auth_headers(user)
+        track = client.post(
+            "/api/v1/tracks", json={"recorder_id": user["id"], "points": [{"latitude": 1, "longitude": 1}, {"latitude": 1.1, "longitude": 1.1}]}, headers=headers
+        ).json()
+        route = client.post("/api/v1/routes", json={"name": "Live route", "recorder_id": user["id"], "track_id": track["id"]}, headers=headers).json()
+        client.post("/api/v1/rides", json={"driver_id": user["id"], "route_id": route["id"], "vehicle_type": "car", "vehicle_number": "TEST-2"}, headers=headers)
+        response = client.delete(f"/api/v1/routes/{route['id']}?driver_id={user['id']}", headers=headers)
+        assert response.status_code == 409
+
+
 def test_routes_list_orders_by_created_at_descending():
     with api() as client:
         user = client.post("/api/v1/users", json={"name": "Ordering Driver"}).json()

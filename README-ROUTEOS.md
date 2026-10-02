@@ -25,6 +25,10 @@ navigation → admin live tracking → end ride
 - **Record Route** captures GPS from the foreground recording service, including
   while the map activity is not in the foreground.
 - Saved routes are shared globally, so every signed-in driver sees them.
+- Route owners and admins can permanently remove routes after confirmation. A
+  route used by a completed ride can still be removed; its completed ride audit
+  history is retained as a hidden backend tombstone. A route cannot be removed
+  while an active ride is using it.
 - Vehicle type and number are stored only on a ride; there is no fleet module.
 - During a ride the driver uploads the latest GPS location every five seconds.
   The admin map polls active rides and stops showing a driver after End Ride.

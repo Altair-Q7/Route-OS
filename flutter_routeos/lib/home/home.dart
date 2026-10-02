@@ -867,7 +867,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                   Navigator.pop(ctx);
                   if (await confirm(
                     'Delete "${route['name']}"?',
-                    'This permanently deletes the route. Routes with ride history are protected.',
+                    'This removes the route from RouteOS for everyone. Completed ride history is preserved.',
                   )) {
                     try {
                       await request('delete', {'id': route['id']});

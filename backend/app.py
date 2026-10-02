@@ -141,6 +141,7 @@ def initialize_database() -> None:
               destination TEXT,
               route_type TEXT NOT NULL DEFAULT 'recorded',
               created_at TEXT NOT NULL,
+              deleted_at TEXT,
               FOREIGN KEY (recorder_id) REFERENCES users(id),
               FOREIGN KEY (track_id) REFERENCES recorded_tracks(id)
             );
@@ -209,6 +210,8 @@ def initialize_database() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_rides_active_driver ON rides(driver_id) WHERE status = 'active'"
         )
         route_columns = {row["name"] for row in db.execute("PRAGMA table_info(routes)").fetchall()}
+        if "deleted_at" not in route_columns:
+            db.execute("ALTER TABLE routes ADD COLUMN deleted_at TEXT")
         for column, kind in (("waypoints", "TEXT"), ("distance_meters", "REAL"), ("duration_seconds", "INTEGER"), ("point_count", "INTEGER")):
             if column not in route_columns:
                 db.execute(f"ALTER TABLE routes ADD COLUMN {column} {kind}")
@@ -567,6 +570,7 @@ def list_routes(driver_id: int | None = None, me: dict = Depends(current_user)) 
              FROM routes r JOIN users u ON u.id = r.recorder_id
              LEFT JOIN route_favorites f ON f.route_id=r.id AND f.user_id=?
              LEFT JOIN route_recents rec ON rec.route_id=r.id AND rec.user_id=?
+             WHERE r.deleted_at IS NULL
              ORDER BY COALESCE(rec.last_used_at,r.created_at) DESC, r.id DESC
              """
             , (viewer_id, viewer_id)
@@ -604,7 +608,7 @@ def get_route(route_id: int, me: dict = Depends(current_user)) -> dict:
                    t.organic_maps_track_id, t.points, r.waypoints, r.distance_meters AS saved_distance, r.duration_seconds AS saved_duration
             FROM routes r LEFT JOIN recorded_tracks t ON t.id = r.track_id
             JOIN users u ON u.id = r.recorder_id
-            WHERE r.id = ?
+            WHERE r.id = ? AND r.deleted_at IS NULL
             """,
             (route_id,),
         ).fetchone()
@@ -624,7 +628,7 @@ def get_route(route_id: int, me: dict = Depends(current_user)) -> dict:
 
 
 def route_actor(db: sqlite3.Connection, route_id: int, driver_id: int) -> tuple[sqlite3.Row, sqlite3.Row]:
-    route = db.execute("SELECT * FROM routes WHERE id = ?", (route_id,)).fetchone()
+    route = db.execute("SELECT * FROM routes WHERE id = ? AND deleted_at IS NULL", (route_id,)).fetchone()
     if route is None:
         raise HTTPException(status_code=404, detail="route not found")
     actor = db.execute("SELECT id, role FROM users WHERE id = ?", (driver_id,)).fetchone()
@@ -652,17 +656,18 @@ def delete_route(route_id: int, driver_id: int, me: dict = Depends(current_user)
         route, actor = route_actor(db, route_id, driver_id)
         if actor["role"] != "admin" and route["recorder_id"] != driver_id:
             raise HTTPException(status_code=403, detail="only the route owner or admin can delete this route")
-        used = db.execute("SELECT id, status FROM rides WHERE route_id = ? LIMIT 1", (route_id,)).fetchone()
-        if used is not None:
-            detail = "route is being used by an active ride" if used["status"] == "active" else "route has ride history and cannot be deleted"
-            raise HTTPException(status_code=409, detail=detail)
-        try:
-            db.execute("DELETE FROM routes WHERE id = ?", (route_id,))
-            db.execute("DELETE FROM recorded_tracks WHERE id = ? AND NOT EXISTS (SELECT 1 FROM routes WHERE track_id = ?)", (route["track_id"], route["track_id"]))
-            db.commit()
-        except sqlite3.IntegrityError:
-            db.rollback()
-            raise HTTPException(status_code=409, detail="route has ride history and cannot be deleted")
+        active = db.execute(
+            "SELECT 1 FROM rides WHERE route_id = ? AND status = 'active' LIMIT 1", (route_id,)
+        ).fetchone()
+        if active is not None:
+            raise HTTPException(status_code=409, detail="end the active ride before deleting this route")
+        # Keep the route row as a historical tombstone so completed rides and their
+        # audit trail remain valid. It disappears from RouteOS lists/details and can
+        # no longer be edited, favorited, shared, or started.
+        db.execute("UPDATE routes SET deleted_at = ? WHERE id = ?", (utc_now(), route_id))
+        db.execute("DELETE FROM route_favorites WHERE route_id = ?", (route_id,))
+        db.execute("DELETE FROM route_recents WHERE route_id = ?", (route_id,))
+        db.commit()
     return {"id": route_id, "deleted": True}
 
 
