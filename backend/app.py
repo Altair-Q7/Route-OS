@@ -96,11 +96,14 @@ ARRIVAL_RADIUS_M = 150.0
 
 
 def connection() -> sqlite3.Connection:
-    db = sqlite3.connect(DATABASE_PATH, timeout=10.0)
+    db = sqlite3.connect(DATABASE_PATH, timeout=10.0, check_same_thread=False)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
     db.execute("PRAGMA journal_mode = WAL")
     db.execute("PRAGMA busy_timeout = 10000")
+    db.execute("PRAGMA synchronous = NORMAL")
+    db.execute("PRAGMA cache_size = -8192")
+    db.execute("PRAGMA temp_store = MEMORY")
     return db
 
 
@@ -198,6 +201,21 @@ def initialize_database() -> None:
             token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
             expires_at TEXT NOT NULL)""")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_auth_token ON users(auth_token)")
+        # Performance indexes
+        db.executescript(
+            """
+            CREATE INDEX IF NOT EXISTS idx_live_locations_ride_id_id ON live_locations(ride_id, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_users_lower_name ON users(lower(name));
+            CREATE INDEX IF NOT EXISTS idx_events_id_desc ON events(id DESC);
+            CREATE INDEX IF NOT EXISTS idx_routes_deleted_created ON routes(deleted_at, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_rides_status_driver ON rides(status, driver_id);
+            CREATE INDEX IF NOT EXISTS idx_routes_recorder_id ON routes(recorder_id);
+            CREATE INDEX IF NOT EXISTS idx_recorded_tracks_recorder_id ON recorded_tracks(recorder_id);
+            """
+        )
+        db.execute("PRAGMA optimize")
+        db.execute("PRAGMA analysis_limit = 1000")
         db.execute(
             """
             UPDATE rides SET status = 'ended', ended_at = started_at

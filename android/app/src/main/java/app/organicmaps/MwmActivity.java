@@ -1754,11 +1754,6 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   public boolean handleBackPress()
   {
-    if (mRouteOsFlutter != null)
-    {
-      mRouteOsFlutter.back();
-      return true;
-    }
     if (isRouteOsRideActive())
     {
       if (mRouteOsEndingRide)
@@ -1767,6 +1762,11 @@ public class MwmActivity extends BaseMwmFragmentActivity
         return true;
       }
       confirmRouteOsRideBackPress();
+      return true;
+    }
+    if (mRouteOsFlutter != null)
+    {
+      finish();
       return true;
     }
 

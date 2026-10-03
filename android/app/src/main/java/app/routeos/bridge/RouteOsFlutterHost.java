@@ -198,6 +198,7 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
       JSONObject data = new JSONObject((java.util.Map<?,?>)envelope.get("data"));
       switch (call.method) {
         case "diagnostic" -> { android.util.Log.w("RouteOsMap", data.optString("message")); result.success(null); }
+        case "close" -> { activity.finish(); result.success(null); }
         case "session" -> {
           var prefs = activity.getSharedPreferences("routeos", Context.MODE_PRIVATE);
           result.success(java.util.Map.of("id", prefs.getLong("driver_id",0), "name", prefs.getString("driver_name", ""), "role", prefs.getString("role", "driver"),

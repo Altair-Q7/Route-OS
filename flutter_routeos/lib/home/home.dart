@@ -968,8 +968,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           }
           if (navigation != null) {
             endRide();
-          } else {
+          } else if (page != 'home') {
             changePage('home');
+          } else {
+            Bridge.call('close');
           }
         }
       },
