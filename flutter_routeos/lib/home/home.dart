@@ -31,6 +31,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   bool rideStarting = false;
   int? moving, inserting;
   Timer? calculationTimeout;
+  Completer<bool>? calculationWaiter;
 
   @override
   void initState() {
@@ -183,12 +184,18 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         }
       case 'route.ready':
         calculationTimeout?.cancel();
+        if (!(calculationWaiter?.isCompleted ?? true)) {
+          calculationWaiter!.complete(true);
+        }
         planner.ready(
           (data['distance_meters'] as num).toDouble(),
           (data['duration_seconds'] as num).toInt(),
         );
       case 'route.failed':
         calculationTimeout?.cancel();
+        if (!(calculationWaiter?.isCompleted ?? true)) {
+          calculationWaiter!.complete(false);
+        }
         planner.failed();
         message(data['message'].toString());
       case 'search.results':
@@ -248,6 +255,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       if (planner.points.length >= 2) {
         calculationTimeout = Timer(const Duration(seconds: 60), () {
           planner.failed();
+          if (!(calculationWaiter?.isCompleted ?? true)) {
+            calculationWaiter!.complete(false);
+          }
           message(
             'Route calculation timed out. Check regional maps and retry.',
           );
@@ -255,6 +265,27 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       }
     } catch (_) {
       planner.failed();
+      if (!(calculationWaiter?.isCompleted ?? true)) {
+        calculationWaiter!.complete(false);
+      }
+    }
+  }
+
+  Future<bool> calculateAndWait() async {
+    if (planner.points.length < 2) {
+      await calculate();
+      return false;
+    }
+    final waiter = Completer<bool>();
+    calculationWaiter = waiter;
+    await calculate();
+    try {
+      return await waiter.future.timeout(const Duration(seconds: 65));
+    } on TimeoutException {
+      if (!waiter.isCompleted) waiter.complete(false);
+      return false;
+    } finally {
+      if (identical(calculationWaiter, waiter)) calculationWaiter = null;
     }
   }
 
@@ -288,8 +319,13 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         );
       }
       setState(() => page = 'planner');
-      await calculate();
+      if (!await calculateAndWait()) {
+        message(
+          'Could not calculate this route. Check offline map coverage and retry.',
+        );
+      }
     } catch (_) {
+      message('Could not load this route. Check your connection and retry.');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -443,6 +479,12 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         });
       }
     }
+  }
+
+  Future<void> startSavedRoute(Map<String, dynamic> route) async {
+    await load(route);
+    if (!mounted || planner.state != PlannerState.ready) return;
+    await vehicle();
   }
 
   Future<void> endRide() async {
@@ -795,6 +837,17 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 subtitle: Text(
                   '${route['route_type']} · ${km(route['distance_meters'])} · ${minutes(route['duration_seconds'])}',
                 ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.play_arrow),
+                title: const Text('Start ride'),
+                subtitle: const Text(
+                  'Load route, choose a vehicle, and start navigation',
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  startSavedRoute(route);
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.map_outlined),

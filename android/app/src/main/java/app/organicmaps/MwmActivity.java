@@ -235,6 +235,28 @@ public class MwmActivity extends BaseMwmFragmentActivity
   private RouteOsHomeOverlay mRouteOsHome;
   private boolean mRouteOsPendingRideStart = false;
   private long mRouteOsActiveRideId = 0;
+  private boolean mRouteOsOrientationTransitionPending = false;
+  private final Handler mRouteOsOrientationHandler = new Handler(Looper.getMainLooper());
+  private final Runnable mRouteOsOrientationUpdate = new Runnable()
+  {
+    @Override
+    public void run()
+    {
+      if (!isRouteOsRideActive() || !Map.isEngineCreated())
+        return;
+      int mode = LocationState.getMode();
+      if (mode == LocationState.FOLLOW_AND_ROTATE)
+        return;
+      // Location mode changes are asynchronous. Wait for the callback before requesting
+      // another transition, otherwise queued switches can cycle back to north-up mode.
+      if (mode != LocationState.PENDING_POSITION && !mRouteOsOrientationTransitionPending)
+      {
+        mRouteOsOrientationTransitionPending = true;
+        LocationState.nativeSwitchToNextMode();
+      }
+      mRouteOsOrientationHandler.postDelayed(this, 500);
+    }
+  };
   private boolean mRouteOsEndingRide = false;
   @Nullable
   private RouteOsAdminOverlay mRouteOsAdmin;
@@ -266,10 +288,15 @@ public class MwmActivity extends BaseMwmFragmentActivity
       return;
     mRouteOsActiveRideId = rideId;
     RoutingController.get().start();
+    mRouteOsOrientationTransitionPending = false;
+    mRouteOsOrientationHandler.removeCallbacks(mRouteOsOrientationUpdate);
+    mRouteOsOrientationHandler.post(mRouteOsOrientationUpdate);
   }
 
   public void routeOsFlutterFinishRide()
   {
+    mRouteOsOrientationHandler.removeCallbacks(mRouteOsOrientationUpdate);
+    mRouteOsOrientationTransitionPending = false;
     if (mRouteOsFlutter != null) mRouteOsFlutter.rideStopped();
     RoutingController.get().cancel();
     mRouteOsActiveRideId = 0;
@@ -2247,6 +2274,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
   public void onMyPositionModeChanged(int newMode)
   {
     Logger.d(LOCATION_TAG, "newMode = " + LocationState.nameOf(newMode));
+    if (mRouteOsOrientationTransitionPending)
+      mRouteOsOrientationTransitionPending = false;
     mMapButtonsViewModel.setMyPositionMode(newMode);
     RoutingController controller = RoutingController.get();
     if (controller.isPlanning() || controller.isBuilding() || controller.isErrorEncountered())

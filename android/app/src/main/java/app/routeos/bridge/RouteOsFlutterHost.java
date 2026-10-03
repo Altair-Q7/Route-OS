@@ -266,9 +266,10 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
           result.success(null);
         }
         case "ride.start" -> {
-          // OM previews with arbitrary starts use RouteNoFollowing, where nativeIsRouteBuilt()
-          // is false. Use the same completed-preview authority as OM's Android Start control.
-          if (!RoutingController.get().isBuilt() || calculating) throw new IllegalStateException("Calculate the route before starting a ride");
+          // A completed OM preview is sufficient input. RouteNoFollowing previews can report
+          // isBuilt() false even though their route points and summary are valid; navigation
+          // below rebuilds the route with the driver's current GPS position.
+          if (calculating) throw new IllegalStateException("Route calculation is still in progress");
           JSONObject definition = navigationDefinition(nativeRoutePoints());
           pendingRideResult = result; pendingRideData = data;
           handler.postDelayed(rideBuildTimeout, 60_000);
