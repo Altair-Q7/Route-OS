@@ -1,0 +1,1 @@
+python3 /path/to/Route-OS/run_routeos.py --adb-reverse
