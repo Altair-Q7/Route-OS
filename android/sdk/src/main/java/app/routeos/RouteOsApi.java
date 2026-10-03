@@ -25,16 +25,15 @@ public final class RouteOsApi {
     try { Object detail=new JSONObject(body).opt("detail"); if(detail!=null)body=detail.toString(); } catch(Exception ignored) {}
     return new ApiException(connection.getResponseCode(),body);
   }
-  /** Host loopback, reached on a device or emulator via `adb reverse tcp:8000 tcp:8000`. */
-  private static final String DEFAULT_API = "http://127.0.0.1:8000";
+  /** Default RouteOS deployment. A local debug server can still be selected in RouteOS settings. */
+  private static final String DEFAULT_API = "https://route-os-backend.onrender.com";
   private RouteOsApi() {}
 
   public static String baseUrl(@NonNull Context context) {
     String saved = context.getSharedPreferences("routeos", Context.MODE_PRIVATE)
         .getString("api_base_url", null);
     if (saved != null && !saved.isEmpty()) { validateBaseUrl(context, saved); return saved; }
-    if ((context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) return DEFAULT_API;
-    throw new IllegalStateException("Configure the RouteOS HTTPS server before signing in");
+    return DEFAULT_API;
   }
 
   public static void setBaseUrl(@NonNull Context context, @NonNull String baseUrl) {

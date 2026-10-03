@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.getenv("ROUTEOS_DATABASE", ROOT / "routeos.db"))
+DEMO_PASSWORD = "RouteOSdemo1"
 
 
 def development_auth() -> bool:
@@ -270,12 +271,22 @@ def initialize_database() -> None:
             ("Sukumara Kurup", "driver"),
             ("Thomachan Valiparambil", "admin"),
         ):
-            existing = db.execute("SELECT id FROM users WHERE lower(name) = lower(?)", (name,)).fetchone()
+            existing = db.execute(
+                "SELECT id FROM users WHERE lower(name) = lower(?)", (name,)
+            ).fetchone()
             if existing is None:
                 db.execute(
-                    "INSERT INTO users(name, role, auth_token, created_at) VALUES (?, ?, ?, ?)",
-                    (name, role, new_token(), utc_now()),
+                    "INSERT INTO users(name, role, auth_token, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (name, role, new_token(), None if development_auth() else password_hash(DEMO_PASSWORD), utc_now()),
                 )
+            elif not development_auth():
+                # This deployment is the shared demo backend. Keep the seeded accounts
+                # usable after a fresh Render deploy without requiring manual provisioning.
+                db.execute(
+                    "UPDATE users SET password_hash=? WHERE id=?",
+                    (password_hash(DEMO_PASSWORD), existing["id"]),
+                )
+                db.execute("DELETE FROM sessions WHERE user_id=?", (existing["id"],))
         for row in db.execute("""SELECT r.id,t.points FROM routes r JOIN recorded_tracks t ON t.id=r.track_id
             WHERE r.point_count IS NULL OR r.distance_meters IS NULL""").fetchall():
             try:
