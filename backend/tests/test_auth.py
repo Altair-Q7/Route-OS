@@ -1,4 +1,25 @@
+import sqlite3
+
+import app as routeos_app
+
 from conftest import api, auth_headers
+
+
+def test_health_checks_database():
+    with api() as client:
+        response = client.get("/health")
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "ok"
+
+
+def test_health_reports_database_failure(monkeypatch):
+    with api() as client:
+        def broken_connection():
+            raise sqlite3.OperationalError("database unavailable")
+
+        monkeypatch.setattr(routeos_app, "connection", broken_connection)
+        response = client.get("/health")
+        assert response.status_code == 503, response.text
 
 
 def test_login_returns_token_for_seeded_admin():

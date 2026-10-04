@@ -460,6 +460,11 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict:
+    try:
+        with closing(connection()) as db:
+            db.execute("SELECT 1").fetchone()
+    except sqlite3.Error as error:
+        raise HTTPException(status_code=503, detail="database unavailable") from error
     return {"status": "ok", "service": "routeos-backend", "organic_maps": True}
 
 
@@ -781,7 +786,9 @@ def start_ride(ride: RideIn, me: dict = Depends(current_user)) -> dict:
         driver = db.execute("SELECT role FROM users WHERE id = ?", (ride.driver_id,)).fetchone()
         if driver is None or driver["role"] != "driver":
             raise HTTPException(status_code=403, detail="a driver account is required")
-        if db.execute("SELECT 1 FROM routes WHERE id = ?", (ride.route_id,)).fetchone() is None:
+        if db.execute(
+            "SELECT 1 FROM routes WHERE id = ? AND deleted_at IS NULL", (ride.route_id,)
+        ).fetchone() is None:
             raise HTTPException(status_code=404, detail="route not found")
         active = db.execute(
             "SELECT id FROM rides WHERE driver_id = ? AND status = 'active'", (ride.driver_id,)

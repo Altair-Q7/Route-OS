@@ -132,6 +132,40 @@ def test_active_route_cannot_be_deleted():
         assert response.status_code == 409
 
 
+def test_deleted_route_cannot_start():
+    with api() as client:
+        user = client.post("/api/v1/users", json={"name": "Deleted Route Driver"}).json()
+        headers = auth_headers(user)
+        track = client.post(
+            "/api/v1/tracks",
+            json={
+                "recorder_id": user["id"],
+                "points": [{"latitude": 1, "longitude": 1}, {"latitude": 1.1, "longitude": 1.1}],
+            },
+            headers=headers,
+        ).json()
+        route = client.post(
+            "/api/v1/routes",
+            json={"name": "Deleted route", "recorder_id": user["id"], "track_id": track["id"]},
+            headers=headers,
+        ).json()
+        deleted = client.delete(
+            f"/api/v1/routes/{route['id']}?driver_id={user['id']}", headers=headers
+        )
+        assert deleted.status_code == 200, deleted.text
+        response = client.post(
+            "/api/v1/rides",
+            json={
+                "driver_id": user["id"],
+                "route_id": route["id"],
+                "vehicle_type": "car",
+                "vehicle_number": "TEST-DELETED",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 404, response.text
+
+
 def test_routes_list_orders_by_created_at_descending():
     with api() as client:
         user = client.post("/api/v1/users", json={"name": "Ordering Driver"}).json()
