@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/bridge.dart';
@@ -21,6 +22,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   String page = 'home', filter = '', query = '';
   String? error;
   Map<String, dynamic>? navigation;
+  final navigationStatus = ValueNotifier<Map<String, dynamic>?>(null);
   bool recording = false;
   Map<String, dynamic> recordingStats = {};
   StateSetter? searchUpdate;
@@ -54,6 +56,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       recording = session['recording'] == true;
       if ((session['active_ride_id'] as num? ?? 0) > 0) {
         navigation = {'maneuver': 'Ride active — waiting for GPS'};
+        navigationStatus.value = navigation;
       }
       final draft = await Bridge.call('draft.load');
       if (draft is Map && draft['points'] is List) {
@@ -86,6 +89,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     subscription?.cancel();
     calculationTimeout?.cancel();
     adminTimer?.cancel();
+    navigationStatus.dispose();
     planner.dispose();
     super.dispose();
   }
@@ -216,16 +220,20 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
             ...Map<String, dynamic>.from(data as Map),
           },
         );
+        navigationStatus.value = navigation;
       case 'navigation.arrived':
-        setState(() => navigation = {...?navigation, 'arrived': true});
+        navigation = {...?navigation, 'arrived': true};
+        navigationStatus.value = navigation;
       case 'navigation.progress':
-        setState(() => navigation = Map<String, dynamic>.from(data as Map));
+        navigation = Map<String, dynamic>.from(data as Map);
+        navigationStatus.value = navigation;
       case 'navigation.stopped':
         planner.state = PlannerState.drawing;
         setState(() {
           navigation = null;
           page = 'home';
         });
+        navigationStatus.value = null;
       case 'recording.started':
         setState(() => recording = true);
       case 'recording.stopped':
@@ -500,6 +508,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         navigation = null;
         page = 'home';
       });
+      navigationStatus.value = null;
       await Bridge.call('draft.save', {...planner.json(), 'ui_page': page});
       await refresh();
     } catch (_) {}
@@ -849,14 +858,23 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                   startSavedRoute(route);
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.map_outlined),
-                title: const Text('Open / edit route'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  load(route);
-                },
-              ),
+              if (route['route_type'] == 'drawn')
+                ListTile(
+                  leading: const Icon(Icons.map_outlined),
+                  title: const Text('Open / edit drawn route'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    load(route);
+                  },
+                )
+              else
+                const ListTile(
+                  leading: Icon(Icons.fiber_manual_record),
+                  title: Text('Recorded track'),
+                  subtitle: Text(
+                    'Original GPS track is kept separate from drawn routes.',
+                  ),
+                ),
               ListTile(
                 leading: const Icon(Icons.edit),
                 title: const Text('Rename'),
@@ -944,15 +962,6 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     return '${arrival.hour.toString().padLeft(2, '0')}:${arrival.minute.toString().padLeft(2, '0')}';
   }
 
-  String maneuver() {
-    final turn = navigation?['maneuver']?.toString();
-    if (turn == null || turn == 'NoTurn') return 'Follow the route';
-    return turn.replaceAllMapped(
-      RegExp(r'([a-z])([A-Z])'),
-      (m) => '${m[1]} ${m[2]}',
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final loggedIn = (session['id'] as num? ?? 0) > 0;
@@ -998,7 +1007,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     Expanded(
                       child: Text(
                         page == 'planner'
-                            ? 'Plan Route'
+                            ? 'Draw Route'
                             : page == 'routes'
                             ? 'Saved Routes'
                             : 'RouteOS',
@@ -1231,35 +1240,15 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                           ),
                         ),
                       ),
-                    if (navigation != null)
-                      Positioned(
-                        top: 12,
-                        left: 12,
-                        right: 12,
-                        child: Card(
-                          color: const Color(0xff075f43),
-                          child: Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  navigation!['arrived'] == true
-                                      ? 'ARRIVED'
-                                      : maneuver(),
-                                  style: const TextStyle(
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Text(
-                                  '${navigation!['street'] ?? ''} · ${navigation!['turn_distance'] ?? 0} m',
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      right: 12,
+                      child: NavigationStatusOverlay(
+                        navigation: navigationStatus,
+                        area: NavigationStatusArea.instruction,
                       ),
+                    ),
                     if (moving != null || inserting != null)
                       Positioned(
                         top: 12,
@@ -1320,19 +1309,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                           ],
                         ),
                       ] else if (navigation != null)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '${minutes(navigation!['duration_seconds'])} · ${km(navigation!['distance_meters'])} · ETA ${eta(navigation!['duration_seconds'])}\n${(navigation!['speed'] as num? ?? 0).round()} km/h${(navigation!['speed_limit'] as num? ?? -1) > 0 ? ' · Limit ${(navigation!['speed_limit'] as num).round()}' : ''}',
-                                style: const TextStyle(fontSize: 20),
-                              ),
-                            ),
-                            FilledButton(
-                              onPressed: endRide,
-                              child: const Text('End ride'),
-                            ),
-                          ],
+                        NavigationStatusOverlay(
+                          navigation: navigationStatus,
+                          area: NavigationStatusArea.statistics,
+                          onEndRide: endRide,
                         )
                       else if (page == 'planner') ...[
                         Row(
@@ -1435,20 +1415,20 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                           children: [
                             Expanded(
                               child: FilledButton.icon(
-                                onPressed: () {
-                                  setState(() => page = 'planner');
-                                  if (planner.points.isNotEmpty) calculate();
-                                },
-                                icon: const Icon(Icons.edit_location_alt),
-                                label: const Text('Plan route'),
+                                onPressed: () => request('record'),
+                                icon: const Icon(Icons.fiber_manual_record),
+                                label: const Text('Record route'),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: () => request('record'),
-                                icon: const Icon(Icons.fiber_manual_record),
-                                label: const Text('Record route'),
+                                onPressed: () {
+                                  setState(() => page = 'planner');
+                                  if (planner.points.isNotEmpty) calculate();
+                                },
+                                icon: const Icon(Icons.edit_location_alt),
+                                label: const Text('Draw route'),
                               ),
                             ),
                           ],
@@ -1461,7 +1441,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             subtitle: Text(
                               '${km(routes.first['distance_meters'])} · ${minutes(routes.first['duration_seconds'])}',
                             ),
-                            onTap: () => load(routes.first),
+                            onTap: () => routeActions(routes.first),
                           ),
                       ],
                       if (busy || planner.state == PlannerState.calculating)
@@ -1491,7 +1471,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.map_outlined),
-                      label: 'Map / Plan',
+                      label: 'Draw',
                     ),
                   ],
                 ),
@@ -1526,9 +1506,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               if (session['development'] == true) ...[
                 const Text('Development accounts'),
                 for (final name in [
-                  'Disha Patani',
+                  'D.B Cooper',
                   'Sukumara Kurup',
-                  'Thomachan Valiparambil',
+                  'Sreekandan Nair',
                 ])
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -1560,4 +1540,86 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       ),
     ),
   );
+}
+
+enum NavigationStatusArea { instruction, statistics }
+
+class NavigationStatusOverlay extends StatelessWidget {
+  const NavigationStatusOverlay({
+    required this.navigation,
+    required this.area,
+    this.onEndRide,
+    super.key,
+  });
+
+  final ValueListenable<Map<String, dynamic>?> navigation;
+  final NavigationStatusArea area;
+  final VoidCallback? onEndRide;
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) => ValueListenableBuilder<Map<String, dynamic>?>(
+    valueListenable: navigation,
+    builder: (context, value, child) {
+      if (value == null) return const SizedBox.shrink();
+      if (area == NavigationStatusArea.instruction) {
+        return Card(
+          color: const Color(0xff075f43),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value['arrived'] == true
+                      ? 'ARRIVED'
+                      : _maneuver(value['maneuver']),
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  '${value['street'] ?? ''} · ${value['turn_distance'] ?? 0} m',
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${_minutes(value['duration_seconds'])} · ${_km(value['distance_meters'])} · ETA ${_eta(value['duration_seconds'])}\n${(value['speed'] as num? ?? 0).round()} km/h${(value['speed_limit'] as num? ?? -1) > 0 ? ' · Limit ${(value['speed_limit'] as num).round()}' : ''}',
+              style: const TextStyle(fontSize: 20),
+            ),
+          ),
+          FilledButton(onPressed: onEndRide, child: const Text('End ride')),
+        ],
+      );
+    },
+  );
+
+  static String _maneuver(dynamic value) {
+    final turn = value?.toString();
+    if (turn == null || turn == 'NoTurn') return 'Follow the route';
+    return turn.replaceAllMapped(
+      RegExp(r'([a-z])([A-Z])'),
+      (m) => '${m[1]} ${m[2]}',
+    );
+  }
+
+  static String _km(dynamic value) =>
+      '${((value as num? ?? 0) / 1000).toStringAsFixed(1)} km';
+
+  static String _minutes(dynamic value) =>
+      '${((value as num? ?? 0) / 60).ceil()} min';
+
+  static String _eta(dynamic value) {
+    if (value is! num) return '—';
+    final arrival = DateTime.now().add(Duration(seconds: value.toInt()));
+    return '${arrival.hour.toString().padLeft(2, '0')}:${arrival.minute.toString().padLeft(2, '0')}';
+  }
 }

@@ -12,8 +12,8 @@ route → another driver selects it → vehicle choice → active ride → Organ
 navigation → admin live tracking → end ride
 ```
 
-- Quick-login accounts are Disha Patani and Sukumara Kurup (drivers), and
-  Thomachan Valiparambil (admin).
+- Quick-login accounts are D.B Cooper and Sukumara Kurup (drivers), and
+  Sreekandan Nair (admin).
 - Search combines saved RouteOS routes with Organic Maps' native offline place
   search.
 - Native GPS can supply a route point or recenter the map. Navigation rebuilds

@@ -35,9 +35,11 @@ def getVersion() {
 
 rootProject.ext {
     def ver = getVersion()
-    versionCode = ver.V1
-    versionName = ver.V2
-    appId = 'app.organicmaps'
+    // RouteOS demo releases can provide an explicit display version without
+    // changing Organic Maps' normal date-based versioning.
+    versionCode = (findProperty('routeOsVersionCode') ?: ver.V1).toString().toInteger()
+    versionName = (findProperty('routeOsVersionName') ?: ver.V2).toString()
+    appId = (findProperty('routeOsApplicationId') ?: 'app.routeos').toString()
     CI = System.getenv("CI") != null
 }
 

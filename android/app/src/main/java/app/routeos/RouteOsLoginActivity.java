@@ -34,9 +34,9 @@ public final class RouteOsLoginActivity extends Activity {
     root.addView(subtitle, new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 44)));
     TextView prompt = RouteOsUi.text(this, "Quick login", 19, Color.WHITE, true);
     LinearLayout.LayoutParams promptParams = new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 56)); promptParams.setMargins(0, RouteOsUi.dp(this, 42), 0, RouteOsUi.dp(this, 8)); root.addView(prompt, promptParams);
-    root.addView(account("D", "Disha Patani", "Driver", false));
+    root.addView(account("D", "D.B Cooper", "Driver", false));
     root.addView(account("S", "Sukumara Kurup", "Driver", false));
-    root.addView(account("T", "Thomachan Valiparambil", "Admin", true));
+    root.addView(account("S", "Sreekandan Nair", "Admin", true));
     TextView note = RouteOsUi.text(this, "RouteOS MVP accounts • no password required", 12, RouteOsUi.MUTED, false); note.setGravity(Gravity.CENTER);
     LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 60)); noteParams.setMargins(0, RouteOsUi.dp(this, 20), 0, 0); root.addView(note, noteParams);
     setContentView(root);

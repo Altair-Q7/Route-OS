@@ -2,6 +2,7 @@
 // Wear Data Layer, which requires both peers to use the same application ID and certificate.
 def securityPropertiesFile = rootProject.file('app/secure.properties')
 def securityPropertiesFileExists = securityPropertiesFile.exists()
+def routeOsDemoRelease = findProperty('routeOsDemoRelease')?.toString()?.toBoolean() ?: false
 if (securityPropertiesFileExists)
   apply from: securityPropertiesFile
 
@@ -26,6 +27,12 @@ android {
         storePassword spropStorePassword
         keyAlias spropKeyAlias
         keyPassword spropKeyPassword
+      } else if (routeOsDemoRelease) {
+        println('Using the debug keystore for the local RouteOS demo release')
+        storeFile rootProject.file('app/debug.keystore')
+        storePassword '12345678'
+        keyAlias 'debug'
+        keyPassword '12345678'
       } else {
         println('The release signing keys are unavailable')
       }
@@ -40,7 +47,7 @@ android {
     }
 
     release {
-      signingConfig = signingConfigs.release
+      signingConfig = routeOsDemoRelease && !securityPropertiesFileExists ? signingConfigs.debug : signingConfigs.release
     }
 
     beta {

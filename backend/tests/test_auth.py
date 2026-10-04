@@ -4,7 +4,7 @@ from conftest import api, auth_headers
 def test_login_returns_token_for_seeded_admin():
     with api() as client:
         response = client.post(
-            "/api/v1/auth/login", json={"name": "Thomachan Valiparambil"}
+            "/api/v1/auth/login", json={"name": "Sreekandan Nair"}
         )
         assert response.status_code == 200, response.text
         body = response.json()
@@ -78,7 +78,7 @@ def test_admin_endpoints_require_admin_role():
     with api() as client:
         driver = client.post("/api/v1/users", json={"name": "Plain Driver"}).json()
         admin = client.post(
-            "/api/v1/auth/login", json={"name": "Thomachan Valiparambil"}
+            "/api/v1/auth/login", json={"name": "Sreekandan Nair"}
         ).json()
         forbidden = client.get("/api/v1/rides/active", headers=auth_headers(driver))
         assert forbidden.status_code == 403, forbidden.text

@@ -37,8 +37,8 @@ The MVP API provides:
 - `GET /api/v1/events` — recent RouteOS activity log.
 - `GET /api/v1/manifest` — product metadata and the supported feature list.
 
-The seeded users are Disha Patani and Sukumara Kurup as drivers, and Thomachan
-Valiparambil as admin.
+The seeded users are D.B Cooper and Sukumara Kurup as drivers, and Sreekandan
+Nair as admin.
 
 ## Authentication and deployment
 
@@ -52,9 +52,9 @@ roles are checked on the server.
 Provision passwords for existing seeded accounts before production startup:
 
 ```bash
-.venv/bin/python provision_password.py 'Disha Patani'
+.venv/bin/python provision_password.py 'D.B Cooper'
 .venv/bin/python provision_password.py 'Sukumara Kurup'
-.venv/bin/python provision_password.py 'Thomachan Valiparambil'
+.venv/bin/python provision_password.py 'Sreekandan Nair'
 ROUTEOS_DEVELOPMENT_AUTH=0 .venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 

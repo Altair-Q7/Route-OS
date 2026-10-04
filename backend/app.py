@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.getenv("ROUTEOS_DATABASE", ROOT / "routeos.db"))
-DEMO_PASSWORD = "RouteOSdemo1"
+DEMO_PASSWORD = "Demo123Demo"
 
 
 def development_auth() -> bool:
@@ -266,10 +266,24 @@ def initialize_database() -> None:
         )
         for row in db.execute("SELECT id FROM users WHERE auth_token IS NULL").fetchall():
             db.execute("UPDATE users SET auth_token = ? WHERE id = ?", (new_token(), row["id"]))
+        # Keep the persistent demo database aligned when the demo account display
+        # names change between deployments.
+        for old_name, new_name in (
+            ("Disha Patani", "D.B Cooper"),
+            ("Thomachan Valiparambil", "Sreekandan Nair"),
+        ):
+            old_user = db.execute(
+                "SELECT id FROM users WHERE lower(name) = lower(?)", (old_name,)
+            ).fetchone()
+            new_user = db.execute(
+                "SELECT id FROM users WHERE lower(name) = lower(?)", (new_name,)
+            ).fetchone()
+            if old_user is not None and new_user is None:
+                db.execute("UPDATE users SET name = ? WHERE id = ?", (new_name, old_user["id"]))
         for name, role in (
-            ("Disha Patani", "driver"),
+            ("D.B Cooper", "driver"),
             ("Sukumara Kurup", "driver"),
-            ("Thomachan Valiparambil", "admin"),
+            ("Sreekandan Nair", "admin"),
         ):
             existing = db.execute(
                 "SELECT id FROM users WHERE lower(name) = lower(?)", (name,)

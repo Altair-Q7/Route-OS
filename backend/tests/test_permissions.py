@@ -57,7 +57,7 @@ def test_admin_can_end_another_driver_ride():
     with api() as client:
         driver = client.post("/api/v1/users", json={"name": "Active Driver"}).json()
         admin = client.post(
-            "/api/v1/auth/login", json={"name": "Thomachan Valiparambil"}
+            "/api/v1/auth/login", json={"name": "Sreekandan Nair"}
         ).json()
         route = _route(client, driver, auth_headers(driver))
         ride = client.post(

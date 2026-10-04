@@ -6,7 +6,7 @@ from contextlib import closing
 def test_production_password_session_and_revocation(monkeypatch):
     monkeypatch.setenv("ROUTEOS_DEVELOPMENT_AUTH", "0")
     with api() as client:
-        assert client.post("/api/v1/auth/login", json={"name": "Disha Patani"}).status_code == 401
+        assert client.post("/api/v1/auth/login", json={"name": "D.B Cooper"}).status_code == 401
         assert client.post("/api/v1/users", json={"name": "No password"}).status_code == 422
         account = {"name": "Password Driver", "password": "a long unique test password"}
         assert client.post("/api/v1/users", json=account).status_code == 201
