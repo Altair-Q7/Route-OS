@@ -7,6 +7,7 @@ import app.organicmaps.sdk.bookmarks.data.BookmarkCategory;
 import app.organicmaps.sdk.bookmarks.data.BookmarkManager;
 import java.util.ArrayList;
 import java.io.File;
+import org.json.JSONArray;
 
 /**
  * Single-preview hygiene for RouteOS map tracks (#24).
@@ -69,8 +70,35 @@ public final class RouteOsTrackPreview {
       String name = category.getName();
       if (name != null && name.startsWith(FILE_PREFIX))
         deleteQuietly(category.getId());
+      for (long trackId : category.getTrackIds()) {
+        try {
+          String trackName = BookmarkManager.INSTANCE.getTrack(trackId).getName();
+          if (trackName != null && trackName.startsWith(FILE_PREFIX))
+            BookmarkManager.INSTANCE.deleteTrack(trackId);
+        } catch (Exception ignored) {}
+      }
     }
     prefs(context).edit().remove(KEY_CATEGORY_ID).remove(KEY_CATEGORY_NAME).apply();
+  }
+
+  /** Removes tracks imported by the legacy preview code, which used the route's display name. */
+  public static void clearLegacyRecordedTracks(@NonNull Context context, @NonNull JSONArray routes) {
+    ArrayList<String> names = new ArrayList<>();
+    for (int i = 0; i < routes.length(); i++) {
+      String type = routes.optJSONObject(i) == null ? "" : routes.optJSONObject(i).optString("route_type");
+      if ("recorded".equals(type))
+        names.add(routes.optJSONObject(i).optString("name"));
+    }
+    if (names.isEmpty()) return;
+    for (BookmarkCategory category : new ArrayList<>(BookmarkManager.INSTANCE.getCategories())) {
+      for (long trackId : category.getTrackIds()) {
+        try {
+          String trackName = BookmarkManager.INSTANCE.getTrack(trackId).getName();
+          if (names.contains(trackName))
+            BookmarkManager.INSTANCE.deleteTrack(trackId);
+        } catch (Exception ignored) {}
+      }
+    }
   }
 
   private static void deleteQuietly(long categoryId) {

@@ -271,7 +271,14 @@ public class MwmActivity extends BaseMwmFragmentActivity
     setOrganicChromeVisible(false);
     if (mRouteOsFlutter == null)
     {
-      if (!isRouteOsRideActive()) { RoutingController.get().cancel(); RouteOsTrackPreview.clear(this); }
+      if (!isRouteOsRideActive()) {
+        RoutingController.get().cancel();
+        Framework.nativeCloseRouting();
+        Framework.nativeRemoveRoute();
+        Framework.nativeRemoveRoutePoints();
+        Framework.nativeClearApiPoints();
+        RouteOsTrackPreview.clear(this);
+      }
       mRouteOsFlutter = new app.routeos.bridge.RouteOsFlutterHost(this, mMapController.getView());
       bindRouteOsFlutterRecordingStats();
       FrameLayout root = new FrameLayout(this);
@@ -279,6 +286,15 @@ public class MwmActivity extends BaseMwmFragmentActivity
       root.addView(mRouteOsFlutter.getView(), new FrameLayout.LayoutParams(-1, -1));
       addRouteOsOverlay(root);
       ViewCompat.requestApplyInsets(mRouteOsFlutter.getView());
+      mRouteOsOrientationHandler.postDelayed(() -> {
+        if (isRouteOsRideActive() || RoutingController.get().isPlanning() || RoutingController.get().isNavigating())
+          return;
+        RoutingController.get().cancel();
+        Framework.nativeCloseRouting();
+        Framework.nativeRemoveRoute();
+        Framework.nativeRemoveRoutePoints();
+        Framework.nativeClearApiPoints();
+      }, 1500);
     }
   }
 
@@ -299,6 +315,11 @@ public class MwmActivity extends BaseMwmFragmentActivity
     mRouteOsOrientationTransitionPending = false;
     if (mRouteOsFlutter != null) mRouteOsFlutter.rideStopped();
     RoutingController.get().cancel();
+    Framework.nativeCloseRouting();
+    Framework.nativeRemoveRoute();
+    Framework.nativeRemoveRoutePoints();
+    Framework.nativeClearApiPoints();
+    RouteOsTrackPreview.clear(this);
     mRouteOsActiveRideId = 0;
     RouteOsApi.clearActiveRide(this);
     if (mRouteOsFlutter != null) mRouteOsFlutter.emit("navigation.stopped", java.util.Map.of());
@@ -966,6 +987,11 @@ public class MwmActivity extends BaseMwmFragmentActivity
   {
     mRouteOsEndingRide = false;
     RoutingController.get().cancel();
+    Framework.nativeCloseRouting();
+    Framework.nativeRemoveRoute();
+    Framework.nativeRemoveRoutePoints();
+    Framework.nativeClearApiPoints();
+    RouteOsTrackPreview.clear(this);
     mRouteOsActiveRideId = 0;
     RouteOsApi.clearActiveRide(this);
     if (mRouteOsNavigation != null)
@@ -1702,6 +1728,15 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   protected void onSafeDestroy()
   {
+    if (!isRouteOsRideActive())
+    {
+      RoutingController.get().cancel();
+      Framework.nativeCloseRouting();
+      Framework.nativeRemoveRoute();
+      Framework.nativeRemoveRoutePoints();
+      Framework.nativeClearApiPoints();
+      RouteOsTrackPreview.clear(this);
+    }
     if (mRouteOsFlutter != null) {
       TrackRecorder.nativeSetTrackRecordingStatsListener(null);
       mRouteOsFlutter.destroy(); mRouteOsFlutter = null;

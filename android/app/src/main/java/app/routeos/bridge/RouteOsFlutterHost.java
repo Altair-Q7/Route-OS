@@ -92,6 +92,17 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
     view.attachToFlutterEngine(engine);
     engine.getDartExecutor().executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault());
     engine.getLifecycleChannel().appIsResumed();
+    // The initial Organic Maps bookmark load can finish before this host registers as a
+    // listener. Reconcile once more after that load without disturbing a preview selected by
+    // the user in the meantime.
+    handler.postDelayed(() -> {
+      if (closed || activity.getSharedPreferences("routeos", 0).getLong("active_ride_id", 0) != 0)
+        return;
+      if (recordedPreviewId > 0)
+        RouteOsTrackPreview.retainImported(activity, recordedPreviewId);
+      else
+        RouteOsTrackPreview.clear(activity);
+    }, 1000);
   }
 
   public View getView() { return view; }
@@ -174,10 +185,11 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
   }
   public void progress(Location location, RoutingInfo info) {
     if (info == null || activity.getSharedPreferences("routeos",0).getLong("active_ride_id",0)==0) return;
-    boolean arrived=Framework.nativeIsRouteFinished();
+    double distanceMeters=Math.max(0,meters(info.distToTarget));
+    boolean arrived=Framework.nativeIsRouteFinished() && distanceMeters <= 5;
     if(arrived && !arrivalSent){arrivalSent=true;emit("navigation.arrived",java.util.Map.of());}
     emit("navigation.progress", java.util.Map.of("maneuver", info.carDirection.name(), "street", info.nextStreet == null ? "" : info.nextStreet,
-      "turn_distance", Math.max(0, meters(info.distToTurn)), "distance_meters", Math.max(0, meters(info.distToTarget)), "duration_seconds", info.totalTimeInSeconds,
+      "turn_distance", Math.max(0, meters(info.distToTurn)), "distance_meters", distanceMeters, "duration_seconds", info.totalTimeInSeconds,
       "speed", location.hasSpeed() ? location.getSpeed()*3.6 : 0, "speed_limit", info.speedLimitMps>0?info.speedLimitMps*3.6:-1, "arrived", arrived));
   }
 
@@ -186,6 +198,27 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
     try { io.execute(() -> {
       try { Object value = plain(task.call()); activity.runOnUiThread(() -> { if (!closed) result.success(value); }); }
       catch (Exception error) { activity.runOnUiThread(() -> { if (!closed) result.error(error instanceof RouteOsApi.ApiException api && api.status==401?"AUTH_EXPIRED":"REQUEST_FAILED", error.getMessage(), null); }); }
+    }); } catch (RejectedExecutionException stopped) {
+      result.error("CLOSED", "Screen closed", null);
+    }
+  }
+
+  private void loadRoutes(MethodChannel.Result result) {
+    if (closed) { result.error("CLOSED", "Screen closed", null); return; }
+    try { io.execute(() -> {
+      try {
+        JSONArray routes = RouteOsApi.getRoutes(activity);
+        activity.runOnUiThread(() -> {
+          if (closed) return;
+          RouteOsTrackPreview.clearLegacyRecordedTracks(activity, routes);
+          try { result.success(plain(routes)); }
+          catch (Exception error) { result.error("REQUEST_FAILED", error.getMessage(), null); }
+        });
+      } catch (Exception error) {
+        activity.runOnUiThread(() -> { if (!closed) result.error(
+            error instanceof RouteOsApi.ApiException api && api.status == 401 ? "AUTH_EXPIRED" : "REQUEST_FAILED",
+            error.getMessage(), null); });
+      }
     }); } catch (RejectedExecutionException stopped) {
       result.error("CLOSED", "Screen closed", null);
     }
@@ -208,14 +241,14 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
         case "login" -> async(result, () -> RouteOsApi.login(activity, data.getString("name"), data.optString("password", null)));
         case "server" -> { RouteOsApi.setBaseUrl(activity, data.getString("url")); result.success(null); }
         case "maps.download" -> { activity.startActivity(new android.content.Intent(activity, app.organicmaps.downloader.DownloaderActivity.class)); result.success(null); }
-        case "routes" -> async(result, () -> RouteOsApi.getRoutes(activity));
+        case "routes" -> loadRoutes(result);
         case "route" -> {
           long generation=++previewGeneration;
           recordedPreviewId=0; RouteOsTrackPreview.clear(activity);
           async(result, () -> {
             JSONObject route=RouteOsApi.getRoute(activity,data.getLong("id"));
             if("recorded".equals(route.optString("route_type"))) importRecording(route,generation);
-            return recordedDefinition(route);
+            return route;
           });
         }
         case "delete" -> async(result, () -> RouteOsApi.deleteRoute(activity, data.getLong("id")));
@@ -250,7 +283,12 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
           if(activity.getSharedPreferences("routeos",0).getLong("active_ride_id",0)!=0) throw new IllegalStateException("Ride is still live");
           calculating=false;
           if(pendingCalculation!=null)handler.removeCallbacks(pendingCalculation);
-          RoutingController.get().cancel();Framework.nativeRemoveRoutePoints(); result.success(null);
+          RoutingController.get().cancel();
+          Framework.nativeCloseRouting();
+          Framework.nativeRemoveRoute();
+          Framework.nativeRemoveRoutePoints();
+          Framework.nativeClearApiPoints();
+          result.success(null);
         }
         case "calculate" -> {
           if (RoutingController.get().isNavigating()) throw new IllegalStateException("End navigation before editing a route");
@@ -267,24 +305,18 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
           result.success(null);
         }
         case "ride.start" -> {
-          // A completed OM preview is sufficient input. RouteNoFollowing previews can report
-          // isBuilt() false even though their route points and summary are valid; navigation
-          // below rebuilds the route with the driver's current GPS position.
-          if (calculating) throw new IllegalStateException("Route calculation is still in progress");
-          JSONObject definition = navigationDefinition(nativeRoutePoints());
-          pendingRideResult = result; pendingRideData = data;
-          handler.postDelayed(rideBuildTimeout, 60_000);
-          try { calculate(definition); } catch (Exception failure) { routeFailed(failure.getMessage(), -1); }
+          startRideCommand(data, result);
         }
         case "ride.restore" -> async(result, () -> {
           JSONObject ride=RouteOsApi.getOwnActiveRide(activity);
           if(!RoutingController.get().isNavigating()){
-            JSONObject route=recordedDefinition(RouteOsApi.getRoute(activity,ride.getLong("route_id")));
+            JSONObject route=RouteOsApi.getRoute(activity,ride.getLong("route_id"));
             activity.runOnUiThread(()->{if(!closed)try{
               restoringRideId=ride.getLong("id");
-              RouteMarkData[] saved=Framework.nativeGetRoutePoints();
-              JSONArray points=saved.length>=2 && saved[0].mIsMyPosition?nativeRoutePoints():route.getJSONArray("points");
-              calculate(navigationDefinition(points));
+              JSONObject definition="recorded".equals(route.optString("route_type"))
+                  ? recordedNavigationDefinition(route)
+                  : navigationDefinition(nativeRoutePoints());
+              calculate(definition);
             }catch(Exception failure){routeFailed(failure.getMessage(),-1);}});
           }
           return ride;
@@ -325,6 +357,48 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
     }
     if (points.length()>=2) { calculating = true; emit("route.calculating",java.util.Map.of()); controller.checkAndBuildRoute(); }
   }
+  private void startRideCommand(JSONObject data, MethodChannel.Result result) {
+    try {
+      io.execute(() -> {
+        try {
+          JSONObject route = RouteOsApi.getRoute(activity, data.getLong("id"));
+          activity.runOnUiThread(() -> {
+            if (closed) return;
+            try {
+              boolean recorded = "recorded".equals(route.optString("route_type"));
+              // Recorded routes bypass the Flutter planner, so discard any stale planner
+              // calculation before building navigation for the recorded destination.
+              if (recorded) {
+                calculating = false;
+                if (pendingCalculation != null) {
+                  handler.removeCallbacks(pendingCalculation);
+                  pendingCalculation = null;
+                }
+                RoutingController.get().cancel();
+                Framework.nativeRemoveRoutePoints();
+              } else if (calculating) {
+                throw new IllegalStateException("Route calculation is still in progress");
+              }
+              JSONObject definition = recorded
+                  ? recordedNavigationDefinition(route)
+                  : navigationDefinition(nativeRoutePoints());
+              pendingRideResult = result; pendingRideData = data;
+              handler.postDelayed(rideBuildTimeout, 60_000);
+              calculate(definition);
+            } catch (Exception failure) {
+              result.error("INVALID_COMMAND", failure.getMessage(), null);
+            }
+          });
+        } catch (Exception error) {
+          activity.runOnUiThread(() -> result.error(
+              error instanceof RouteOsApi.ApiException api && api.status == 401 ? "AUTH_EXPIRED" : "REQUEST_FAILED",
+              error.getMessage(), null));
+        }
+      });
+    } catch (RejectedExecutionException stopped) {
+      result.error("CLOSED", "Screen closed", null);
+    }
+  }
   private JSONArray nativeRoutePoints() throws JSONException {
     JSONArray points=new JSONArray();
     for(RouteMarkData p:Framework.nativeGetRoutePoints()) {
@@ -333,19 +407,10 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
     }
     return points;
   }
-  private JSONObject recordedDefinition(JSONObject route) throws Exception {
-    if (!"recorded".equals(route.optString("route_type"))) return route;
+  private JSONObject recordedNavigationDefinition(JSONObject route) throws Exception {
     JSONArray recording=route.getJSONArray("points");
-    double[] coordinates=new double[recording.length()*2];
-    for(int i=0;i<recording.length();i++) {
-      JSONObject p=recording.getJSONObject(i);
-      coordinates[i*2]=p.getDouble("latitude");coordinates[i*2+1]=p.getDouble("longitude");
-    }
-    int[] indices=app.organicmaps.sdk.location.TrackRecorder.nativeRouteOsTrackWaypointIndices(coordinates);
-    JSONArray anchors=new JSONArray();
-    for(int index:indices) anchors.put(recording.getJSONObject(index));
-    route.put("recorded_track_point_count",recording.length()).put("navigation_anchor_count",anchors.length()).put("points",anchors);
-    return route;
+    if(recording.length()==0) throw new IllegalStateException("The recorded route has no destination");
+    return navigationDefinition(new JSONArray().put(recording.getJSONObject(recording.length()-1)));
   }
   private void importRecording(JSONObject route,long generation) throws Exception {
     JSONArray fixes=route.getJSONArray("points"),coordinates=new JSONArray();
@@ -355,7 +420,7 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
     }
     long routeId=route.getLong("id");
     java.io.File file=new java.io.File(activity.getCacheDir(),"routeos-route-"+routeId+".track-"+System.nanoTime()+".geojson");
-    JSONObject feature=new JSONObject().put("type","Feature").put("properties",new JSONObject().put("name",route.optString("name")))
+    JSONObject feature=new JSONObject().put("type","Feature").put("properties",new JSONObject().put("name","routeos-route-"+routeId))
       .put("geometry",new JSONObject().put("type","LineString").put("coordinates",coordinates));
     JSONObject collection=new JSONObject().put("type","FeatureCollection").put("features",new JSONArray().put(feature));
     try(java.io.FileOutputStream output=new java.io.FileOutputStream(file)) {

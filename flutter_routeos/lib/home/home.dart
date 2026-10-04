@@ -68,6 +68,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       if ((session['id'] as num? ?? 0) > 0) {
         await refresh();
         if (navigation != null) await request('ride.restore');
+        if (navigation == null) await request('preview.clear');
         if (navigation == null &&
             !recording &&
             page == 'planner' &&
@@ -215,9 +216,12 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       case 'navigation.started':
         planner.state = PlannerState.navigating;
         setState(
-          () => navigation = {
-            'maneuver': 'Waiting for GPS guidance',
-            ...Map<String, dynamic>.from(data as Map),
+          () {
+            page = 'home';
+            navigation = {
+              'maneuver': 'Waiting for GPS guidance',
+              ...Map<String, dynamic>.from(data as Map),
+            };
           },
         );
         navigationStatus.value = navigation;
@@ -490,6 +494,17 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   }
 
   Future<void> startSavedRoute(Map<String, dynamic> route) async {
+    if (route['route_type'] == 'recorded') {
+      planner.restore({'points': []});
+      planner.id = (route['id'] as num).toInt();
+      planner.name = route['name']?.toString() ?? '';
+      planner.distance = (route['distance_meters'] as num? ?? 0).toDouble();
+      planner.duration = (route['duration_seconds'] as num? ?? 0).toInt();
+      planner.state = PlannerState.ready;
+      if (mounted) setState(() {});
+      await vehicle();
+      return;
+    }
     await load(route);
     if (!mounted || planner.state != PlannerState.ready) return;
     await vehicle();
@@ -965,6 +980,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final loggedIn = (session['id'] as num? ?? 0) > 0;
+    final isAdmin = session['role'] == 'admin';
     final landscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     return PopScope(
@@ -1452,27 +1468,26 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               if (loggedIn && navigation == null && !recording)
                 NavigationBar(
                   height: landscape ? 56 : 80,
-                  selectedIndex: page == 'routes'
-                      ? 1
-                      : page == 'planner'
-                      ? 2
-                      : 0,
+                  selectedIndex: page == 'routes' ? 1 : 0,
                   onDestinationSelected: (i) {
-                    changePage(['home', 'routes', 'planner'][i]);
+                    changePage((isAdmin
+                        ? ['home', 'routes']
+                        : ['home', 'routes', 'planner'])[i]);
                   },
-                  destinations: const [
-                    NavigationDestination(
+                  destinations: [
+                    const NavigationDestination(
                       icon: Icon(Icons.home_outlined),
                       label: 'Home',
                     ),
-                    NavigationDestination(
+                    const NavigationDestination(
                       icon: Icon(Icons.route),
                       label: 'Routes',
                     ),
-                    NavigationDestination(
-                      icon: Icon(Icons.map_outlined),
-                      label: 'Draw',
-                    ),
+                    if (!isAdmin)
+                      const NavigationDestination(
+                        icon: Icon(Icons.map_outlined),
+                        label: 'Draw',
+                      ),
                   ],
                 ),
             ],
