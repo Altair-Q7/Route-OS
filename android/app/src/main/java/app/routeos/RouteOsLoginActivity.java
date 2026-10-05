@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.text.InputType;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -34,15 +36,26 @@ public final class RouteOsLoginActivity extends Activity {
     root.addView(subtitle, new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 44)));
     TextView prompt = RouteOsUi.text(this, "Quick login", 19, Color.WHITE, true);
     LinearLayout.LayoutParams promptParams = new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 56)); promptParams.setMargins(0, RouteOsUi.dp(this, 42), 0, RouteOsUi.dp(this, 8)); root.addView(prompt, promptParams);
-    root.addView(account("D", "D.B Cooper", "Driver", false));
-    root.addView(account("S", "Sukumara Kurup", "Driver", false));
-    root.addView(account("S", "Sreekandan Nair", "Admin", true));
-    TextView note = RouteOsUi.text(this, "RouteOS MVP accounts • no password required", 12, RouteOsUi.MUTED, false); note.setGravity(Gravity.CENTER);
+    EditText password = new EditText(this);
+    password.setSingleLine(true);
+    password.setHint("Password (optional in development)");
+    password.setHintTextColor(RouteOsUi.MUTED);
+    password.setTextColor(Color.WHITE);
+    password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+    password.setPadding(RouteOsUi.dp(this, 18), 0, RouteOsUi.dp(this, 18), 0);
+    password.setBackground(RouteOsUi.background(RouteOsUi.CARD, RouteOsUi.dp(this, 17), RouteOsUi.STROKE));
+    LinearLayout.LayoutParams passwordParams = new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 58));
+    passwordParams.setMargins(0, 0, 0, RouteOsUi.dp(this, 12));
+    root.addView(password, passwordParams);
+    root.addView(account("D", "D.B Cooper", "Driver", false, password));
+    root.addView(account("S", "Sukumara Kurup", "Driver", false, password));
+    root.addView(account("S", "Sreekandan Nair", "Admin", true, password));
+    TextView note = RouteOsUi.text(this, "RouteOS demo accounts • enter password when required", 12, RouteOsUi.MUTED, false); note.setGravity(Gravity.CENTER);
     LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 60)); noteParams.setMargins(0, RouteOsUi.dp(this, 20), 0, 0); root.addView(note, noteParams);
     setContentView(root);
   }
 
-  private LinearLayout account(String initial, String name, String role, boolean admin) {
+  private LinearLayout account(String initial, String name, String role, boolean admin, EditText password) {
     LinearLayout card = new LinearLayout(this); card.setGravity(Gravity.CENTER_VERTICAL);
     card.setPadding(RouteOsUi.dp(this, 14), RouteOsUi.dp(this, 10), RouteOsUi.dp(this, 14), RouteOsUi.dp(this, 10));
     card.setBackground(RouteOsUi.background(admin ? Color.rgb(24, 31, 48) : RouteOsUi.CARD, RouteOsUi.dp(this, 18), admin ? Color.rgb(125, 101, 221) : RouteOsUi.STROKE));
@@ -54,15 +67,15 @@ public final class RouteOsLoginActivity extends Activity {
     copy.addView(RouteOsUi.text(this, role, 13, admin ? Color.rgb(183, 168, 255) : RouteOsUi.GREEN, false));
     card.addView(copy, new LinearLayout.LayoutParams(0, -1, 1));
     card.addView(RouteOsUi.text(this, "›", 28, RouteOsUi.MUTED, false), new LinearLayout.LayoutParams(RouteOsUi.dp(this, 28), -1));
-    RouteOsUi.pressable(card, () -> login(name));
+    RouteOsUi.pressable(card, () -> login(name, password.getText().toString()));
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, RouteOsUi.dp(this, 84)); params.setMargins(0, RouteOsUi.dp(this, 6), 0, RouteOsUi.dp(this, 6)); card.setLayoutParams(params);
     return card;
   }
 
-  private void login(String name) {
+  private void login(String name, String password) {
     executor.execute(() -> {
       try {
-        JSONObject user = RouteOsApi.login(this, name);
+        JSONObject user = RouteOsApi.login(this, name, password.isEmpty() ? null : password);
         runOnUiThread(() -> {
           Intent intent;
           if ("admin".equals(user.optString("role")))

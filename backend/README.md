@@ -86,6 +86,12 @@ end any active ride or recording first.
 Startup preserves provisioned passwords and existing sessions. Seeded accounts
 have no production password until explicitly provisioned.
 
+On Render plans without Shell access, set the secret environment variable
+`ROUTEOS_DEMO_PASSWORD` to a password of 12–256 characters. On startup, the
+backend provisions that password for all three seeded demo accounts and revokes
+their previous sessions. Keep `ROUTEOS_DEVELOPMENT_AUTH=0`; this preserves normal
+password authentication without exposing passwordless login.
+
 Android navigation persists up to 1,000 GPS samples in an account/server-scoped
 SQLite outbox and retries network/server failures with backoff. Samples include
 `sample_id`, UTC `recorded_at`, and optional `accuracy_meters`; retries are

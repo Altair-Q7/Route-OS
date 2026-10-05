@@ -24,6 +24,15 @@ def development_auth() -> bool:
     return os.getenv("ROUTEOS_DEVELOPMENT_AUTH", "0") == "1"
 
 
+def demo_password() -> str | None:
+    value = os.getenv("ROUTEOS_DEMO_PASSWORD")
+    if value is None or not value.strip():
+        return None
+    if len(value) < 12 or len(value) > 256:
+        raise RuntimeError("ROUTEOS_DEMO_PASSWORD must contain 12–256 characters")
+    return value
+
+
 def password_hash(password: str, salt: str | None = None) -> str:
     salt = salt or secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 600_000).hex()
@@ -304,6 +313,19 @@ def initialize_database() -> None:
                     # production. Never install a shared, known password.
                     (name, role, new_token(), None, utc_now()),
                 )
+        configured_demo_password = demo_password()
+        if configured_demo_password is not None:
+            encoded_password = password_hash(configured_demo_password)
+            for name in ("D.B Cooper", "Sukumara Kurup", "Sreekandan Nair"):
+                user = db.execute(
+                    "SELECT id FROM users WHERE lower(name) = lower(?)", (name,)
+                ).fetchone()
+                if user is not None:
+                    db.execute(
+                        "UPDATE users SET password_hash=? WHERE id=?",
+                        (encoded_password, user["id"]),
+                    )
+                    db.execute("DELETE FROM sessions WHERE user_id=?", (user["id"],))
         for row in db.execute("""SELECT r.id,t.points FROM routes r JOIN recorded_tracks t ON t.id=r.track_id
             WHERE r.point_count IS NULL OR r.distance_meters IS NULL""").fetchall():
             try:

@@ -38,7 +38,7 @@ rootProject.ext {
     // RouteOS demo releases can provide an explicit display version without
     // changing Organic Maps' normal date-based versioning.
     versionCode = (findProperty('routeOsVersionCode') ?: ver.V1).toString().toInteger()
-    versionName = (findProperty('routeOsVersionName') ?: ver.V2).toString()
+    versionName = (findProperty('routeOsVersionName') ?: 'Alpha 2.2').toString()
     appId = (findProperty('routeOsApplicationId') ?: 'app.routeos').toString()
     CI = System.getenv("CI") != null
 }

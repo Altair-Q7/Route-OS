@@ -23,9 +23,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   String? error;
   Map<String, dynamic>? navigation;
   final navigationStatus = ValueNotifier<Map<String, dynamic>?>(null);
+  final recordingStatus = ValueNotifier<Map<String, dynamic>>({});
   Map<String, dynamic> tracking = {};
   bool recording = false;
-  Map<String, dynamic> recordingStats = {};
   StateSetter? searchUpdate;
   Timer? adminTimer;
   bool adminLoading = false, foreground = true;
@@ -110,6 +110,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     cancelCalculation();
     adminTimer?.cancel();
     navigationStatus.dispose();
+    recordingStatus.dispose();
     planner.dispose();
     super.dispose();
   }
@@ -311,12 +312,15 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         });
         navigationStatus.value = null;
       case 'recording.started':
+        recordingStatus.value = {};
         setState(() => recording = true);
       case 'recording.stopped':
+        recordingStatus.value = {};
         setState(() => recording = false);
         refresh();
       case 'recording.progress':
-        setState(() => recordingStats = Map<String, dynamic>.from(data as Map));
+        final stats = Map<String, dynamic>.from(data as Map);
+        recordingStatus.value = stats;
     }
   }
 
@@ -1447,8 +1451,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (recording) ...[
-                        Text(
-                          'Recording Route · ${km(recordingStats['distance_meters'])} · ${minutes(recordingStats['duration_seconds'])}',
+                        ValueListenableBuilder<Map<String, dynamic>>(
+                          valueListenable: recordingStatus,
+                          builder: (context, stats, child) => Text(
+                            'Recording Route · ${km(stats['distance_meters'])} · ${minutes(stats['duration_seconds'])}',
+                          ),
                         ),
                         Row(
                           children: [
