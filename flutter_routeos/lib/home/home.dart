@@ -23,6 +23,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   String? error;
   Map<String, dynamic>? navigation;
   final navigationStatus = ValueNotifier<Map<String, dynamic>?>(null);
+  Map<String, dynamic> tracking = {};
   bool recording = false;
   Map<String, dynamic> recordingStats = {};
   StateSetter? searchUpdate;
@@ -31,9 +32,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   List<Map<String, dynamic>> activeRides = [];
   bool busy = false;
   bool rideStarting = false;
+  bool authRequired = false;
   int? moving, inserting;
   Timer? calculationTimeout;
   Completer<bool>? calculationWaiter;
+  int calculationGeneration = 0;
 
   @override
   void initState() {
@@ -56,9 +59,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       recording = session['recording'] == true;
       if ((session['active_ride_id'] as num? ?? 0) > 0) {
         navigation = {'maneuver': 'Ride active — waiting for GPS'};
-        navigationStatus.value = navigation;
+        notifyNavigation();
       }
       final draft = await Bridge.call('draft.load');
+      if (!mounted) return;
       if (draft is Map && draft['points'] is List) {
         planner.restore(Map<String, dynamic>.from(draft));
         if (['home', 'routes', 'planner'].contains(draft['ui_page'])) {
@@ -67,7 +71,21 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       }
       if ((session['id'] as num? ?? 0) > 0) {
         await refresh();
-        if (navigation != null) await request('ride.restore');
+        if (!mounted) return;
+        if (session['role'] == 'driver') {
+          final ride = await request('ride.restore');
+          if (!mounted) return;
+          setState(() {
+            if (ride == null) {
+              navigation = null;
+              session.remove('active_ride_id');
+            } else {
+              session['active_ride_id'] = ride['id'];
+              navigation ??= {'maneuver': 'Ride active — waiting for GPS'};
+            }
+          });
+          notifyNavigation();
+        }
         if (navigation == null) await request('preview.clear');
         if (navigation == null &&
             !recording &&
@@ -77,8 +95,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         }
       }
     } catch (e) {
+      if (!mounted) return;
       if (e is PlatformException && e.code == 'AUTH_EXPIRED') {
-        setState(() => session = {'development': session['development']});
+        setState(() => authRequired = true);
       }
       message('Could not restore your session: $e');
     }
@@ -88,7 +107,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     subscription?.cancel();
-    calculationTimeout?.cancel();
+    cancelCalculation();
     adminTimer?.cancel();
     navigationStatus.dispose();
     planner.dispose();
@@ -107,25 +126,48 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     setState(() => error = text);
   }
 
+  void notifyNavigation() {
+    navigationStatus.value = navigation == null
+        ? null
+        : {
+            ...navigation!,
+            'tracking_message': tracking['message'],
+            'tracking_state': tracking['state'],
+          };
+  }
+
   Future<dynamic> request(
     String method, [
     Map<String, dynamic> data = const {},
   ]) async {
     try {
-      return await Bridge.call(method, data);
+      final value = await Bridge.call(method, data);
+      if (!mounted) throw StateError('Screen closed');
+      return value;
     } catch (e) {
       if (mounted && e is PlatformException && e.code == 'AUTH_EXPIRED') {
-        setState(() => session = {'development': session['development']});
+        setState(() => authRequired = true);
       }
       message(e is PlatformException ? e.message ?? e.code : e.toString());
       rethrow;
     }
   }
 
+  Future<void> command(
+    String method, [
+    Map<String, dynamic> data = const {},
+  ]) async {
+    if (!mounted) return;
+    try {
+      await request(method, data);
+    } catch (_) {}
+  }
+
   Future<void> refresh() async {
+    final account = session['id'];
     try {
       final value = await request('routes');
-      if (mounted) {
+      if (mounted && account == session['id']) {
         setState(
           () => routes = (value as List)
               .map((e) => Map<String, dynamic>.from(e as Map))
@@ -133,7 +175,12 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         );
       }
     } catch (_) {}
-    if (session['role'] == 'admin' && !adminLoading) pollAdmin();
+    if (mounted &&
+        session['role'] == 'admin' &&
+        !adminLoading &&
+        !authRequired) {
+      pollAdmin();
+    }
   }
 
   Future<void> pollAdmin() async {
@@ -142,18 +189,25 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       return;
     }
     adminLoading = true;
+    final account = session['id'];
     try {
       final rides = (await request('active') as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
-      if (mounted && foreground) {
+      if (mounted &&
+          foreground &&
+          account == session['id'] &&
+          session['role'] == 'admin') {
         setState(() => activeRides = rides);
         await request('admin.points', {'rides': rides});
       }
     } catch (_) {
     } finally {
       adminLoading = false;
-      if (mounted && foreground && session['role'] == 'admin') {
+      if (mounted &&
+          foreground &&
+          session['role'] == 'admin' &&
+          !authRequired) {
         adminTimer = Timer(const Duration(seconds: 5), pollAdmin);
       }
     }
@@ -164,7 +218,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     final data = raw['data'];
     switch (raw['type']) {
       case 'map.tap':
-        if (page != 'planner' || navigation != null || rideStarting) return;
+        if (page != 'planner' || navigation != null || rideStarting || busy) {
+          return;
+        }
         final point = RoutePoint.fromJson(
           Map<String, dynamic>.from(data as Map),
         );
@@ -188,6 +244,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           pointActions(index < 0 ? planner.points.length - 1 : index);
         }
       case 'route.ready':
+        if (data['generation'] != calculationGeneration ||
+            planner.state != PlannerState.calculating) {
+          return;
+        }
         calculationTimeout?.cancel();
         if (!(calculationWaiter?.isCompleted ?? true)) {
           calculationWaiter!.complete(true);
@@ -197,6 +257,12 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           (data['duration_seconds'] as num).toInt(),
         );
       case 'route.failed':
+        if (data['generation'] != calculationGeneration) {
+          if (navigation != null || rideStarting) {
+            message(data['message'].toString());
+          }
+          return;
+        }
         calculationTimeout?.cancel();
         if (!(calculationWaiter?.isCompleted ?? true)) {
           calculationWaiter!.complete(false);
@@ -215,26 +281,32 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         searchUpdate?.call(() {});
       case 'navigation.started':
         planner.state = PlannerState.navigating;
-        setState(
-          () {
-            page = 'home';
-            navigation = {
-              'maneuver': 'Waiting for GPS guidance',
-              ...Map<String, dynamic>.from(data as Map),
-            };
-          },
-        );
-        navigationStatus.value = navigation;
+        setState(() {
+          page = 'home';
+          navigation = {
+            'maneuver': 'Waiting for GPS guidance',
+            ...Map<String, dynamic>.from(data as Map),
+          };
+        });
+        notifyNavigation();
       case 'navigation.arrived':
         navigation = {...?navigation, 'arrived': true};
-        navigationStatus.value = navigation;
+        notifyNavigation();
       case 'navigation.progress':
         navigation = Map<String, dynamic>.from(data as Map);
-        navigationStatus.value = navigation;
+        notifyNavigation();
+      case 'tracking.status':
+        tracking = Map<String, dynamic>.from(data as Map);
+        if (tracking['state'] == 'auth_required') {
+          setState(() => authRequired = true);
+        }
+        notifyNavigation();
       case 'navigation.stopped':
         planner.state = PlannerState.drawing;
         setState(() {
           navigation = null;
+          tracking = {};
+          session.remove('active_ride_id');
           page = 'home';
         });
         navigationStatus.value = null;
@@ -248,24 +320,44 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> calculate() async {
-    if (rideStarting) return;
+  void cancelCalculation() {
+    calculationGeneration++;
+    calculationTimeout?.cancel();
+    if (!(calculationWaiter?.isCompleted ?? true)) {
+      calculationWaiter!.complete(false);
+    }
+    calculationWaiter = null;
+  }
+
+  Future<void> calculate({Completer<bool>? waiter}) async {
+    if (rideStarting || !mounted) {
+      waiter?.complete(false);
+      return;
+    }
+    cancelCalculation();
+    final generation = calculationGeneration;
+    calculationWaiter = waiter;
     if (planner.points.length > 102) {
       message(
         'Organic Maps supports 100 waypoints plus start and destination.',
       );
+      waiter?.complete(false);
       return;
     }
     planner.calculating();
-    await Bridge.call('draft.save', {...planner.json(), 'ui_page': page});
+    final definition = planner.json();
     try {
+      await request('draft.save', {...definition, 'ui_page': page});
+      if (!mounted || generation != calculationGeneration) return;
       await request('calculate', {
-        'points': planner.json()['points'],
-        'profile': planner.profile.name,
+        'points': definition['points'],
+        'profile': definition['profile'],
+        'generation': generation,
       });
-      calculationTimeout?.cancel();
-      if (planner.points.length >= 2) {
+      if (!mounted || generation != calculationGeneration) return;
+      if (planner.state == PlannerState.calculating) {
         calculationTimeout = Timer(const Duration(seconds: 60), () {
+          if (!mounted || generation != calculationGeneration) return;
           planner.failed();
           if (!(calculationWaiter?.isCompleted ?? true)) {
             calculationWaiter!.complete(false);
@@ -276,6 +368,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         });
       }
     } catch (_) {
+      if (!mounted || generation != calculationGeneration) return;
       planner.failed();
       if (!(calculationWaiter?.isCompleted ?? true)) {
         calculationWaiter!.complete(false);
@@ -289,8 +382,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       return false;
     }
     final waiter = Completer<bool>();
-    calculationWaiter = waiter;
-    await calculate();
+    await calculate(waiter: waiter);
     try {
       return await waiter.future.timeout(const Duration(seconds: 65));
     } on TimeoutException {
@@ -302,6 +394,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   }
 
   Future<void> locate({bool add = false}) async {
+    if (add && (busy || rideStarting || navigation != null)) return;
     try {
       final p = await request('location');
       if (add) {
@@ -323,6 +416,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       final value = Map<String, dynamic>.from(
         await request('route', {'id': route['id']}) as Map,
       );
+      if (!mounted) return;
       planner.restore(value);
       if ((value['recorded_track_point_count'] as num? ?? 0) >
           planner.points.length) {
@@ -344,6 +438,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   }
 
   Future<String?> nameDialog(String title, [String initial = '']) async {
+    if (!mounted) return null;
     final input = TextEditingController(text: initial);
     final value = await showDialog<String>(
       context: context,
@@ -396,7 +491,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   Future<void> save() async {
     if (planner.state != PlannerState.ready) return;
     final name = await nameDialog('Save route', planner.name);
-    if (name == null) return;
+    if (!mounted || name == null) return;
     setState(() => busy = true);
     planner.state = PlannerState.saving;
     try {
@@ -413,9 +508,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       message('Route saved and available to other drivers.');
     } catch (_) {
     } finally {
-      planner.state = PlannerState.ready;
-      if (mounted) setState(() => busy = false);
-      await Bridge.call('draft.save', {...planner.json(), 'ui_page': page});
+      if (mounted) {
+        planner.state = PlannerState.ready;
+        setState(() => busy = false);
+        await command('draft.save', {...planner.json(), 'ui_page': page});
+      }
     }
   }
 
@@ -470,7 +567,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         ),
       ),
     );
-    if (selected != true) return;
+    if (!mounted || selected != true) return;
     setState(() {
       busy = true;
       rideStarting = true;
@@ -482,7 +579,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         'vehicle_number': number.text.trim(),
       });
     } catch (_) {
-      planner.failed();
+      if (mounted) planner.failed();
     } finally {
       if (mounted) {
         setState(() {
@@ -517,6 +614,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     )) {
       return;
     }
+    if (!mounted) return;
     try {
       await request('ride.end');
       setState(() {
@@ -524,12 +622,13 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         page = 'home';
       });
       navigationStatus.value = null;
-      await Bridge.call('draft.save', {...planner.json(), 'ui_page': page});
+      await command('draft.save', {...planner.json(), 'ui_page': page});
       await refresh();
     } catch (_) {}
   }
 
   Future<void> changePage(String next) async {
+    if (!mounted || busy) return;
     if (rideStarting) {
       message('Starting navigation — please wait.');
       return;
@@ -543,17 +642,18 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       return;
     }
     setState(() => page = next);
-    await Bridge.call('draft.save', {...planner.json(), 'ui_page': page});
+    await command('draft.save', {...planner.json(), 'ui_page': page});
+    if (!mounted) return;
     if (next == 'home') {
-      calculationTimeout?.cancel();
-      await request('preview.clear');
+      cancelCalculation();
+      await command('preview.clear');
     }
     if (next == 'routes') await refresh();
     if (next == 'planner' && planner.points.isNotEmpty) await calculate();
   }
 
   Future<void> pointActions(int index) async {
-    if (rideStarting) return;
+    if (rideStarting || busy) return;
     if (index < 0 || index >= planner.points.length) return;
     final p = planner.points[index];
     final action = await showModalBottomSheet<String>(
@@ -577,6 +677,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         ),
       ),
     );
+    if (!mounted) return;
     if (action == 'Delete point') {
       planner.remove(index);
       await calculate();
@@ -586,7 +687,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   }
 
   Future<void> login([String? selected]) async {
-    final name = TextEditingController(text: selected ?? '');
+    if (!mounted) return;
+    final name = TextEditingController(
+      text:
+          selected ?? (authRequired ? session['name']?.toString() : null) ?? '',
+    );
     final password = TextEditingController();
     final submitted = await showDialog<bool>(
       context: context,
@@ -619,16 +724,18 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         ],
       ),
     );
-    if (submitted != true) return;
+    if (!mounted || submitted != true) return;
     try {
       final user = await request('login', {
         'name': name.text.trim(),
         'password': password.text.isEmpty ? null : password.text,
       });
-      setState(
-        () => session = {...session, ...Map<String, dynamic>.from(user as Map)},
-      );
-      await refresh();
+      if (!mounted) return;
+      setState(() {
+        authRequired = false;
+        session = {...session, ...Map<String, dynamic>.from(user as Map)};
+      });
+      await restore();
     } catch (_) {}
   }
 
@@ -637,26 +744,40 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     if (value != null) {
       try {
         await request('server', {'url': value});
+        if (!mounted) return;
+        cancelCalculation();
+        planner.restore({'points': []});
+        setState(() {
+          session = {'development': session['development']};
+          routes = [];
+          activeRides = [];
+          page = 'home';
+          authRequired = false;
+        });
+        await restore();
         message('Server configured.');
       } catch (_) {}
     }
   }
 
   Future<void> optimize() async {
+    if (busy || rideStarting || navigation != null) return;
     final order = planner.optimizedOrder();
     final positions = order
         .map((p) => planner.points.indexWhere((old) => old.id == p.id) + 1)
         .join(' → ');
     if (await confirm(
-      'Optimize waypoint order?',
-      'Proposed order: $positions\nStart and destination stay fixed. This shortens geographic waypoint order, not necessarily road travel time. Organic Maps recalculates the road route. Undo restores the original order.',
-    )) {
+          'Optimize waypoint order?',
+          'Proposed order: $positions\nStart and destination stay fixed. This shortens geographic waypoint order, not necessarily road travel time. Organic Maps recalculates the road route. Undo restores the original order.',
+        ) &&
+        mounted) {
       planner.edit(order);
       await calculate();
     }
   }
 
   void pointsSheet() {
+    if (busy || rideStarting || navigation != null) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -781,7 +902,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             searchResults = [];
                             searching = false;
                           });
-                          request('search', {'query': ''});
+                          command('search', {'query': ''});
                         },
                       ),
                     ),
@@ -816,7 +937,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                         title: Text(p['label'].toString()),
                         subtitle: Text(p['address'].toString()),
                         onTap: () {
-                          if (navigation != null) {
+                          if (navigation != null || busy || rideStarting) {
                             message('End navigation before editing a route.');
                             return;
                           }
@@ -826,7 +947,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             );
                             return;
                           }
-                          request('center', p);
+                          command('center', p);
                           Navigator.pop(ctx);
                           setState(() => page = 'planner');
                           calculate();
@@ -996,7 +1117,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           } else if (page != 'home') {
             changePage('home');
           } else {
-            Bridge.call('close');
+            command('close');
           }
         }
       },
@@ -1040,19 +1161,25 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     ),
                     IconButton(
                       tooltip: 'Offline maps',
-                      onPressed: () => request('maps.download'),
+                      onPressed: () => command('maps.download'),
                       icon: const Icon(Icons.download_for_offline_outlined),
                     ),
                     if (loggedIn)
                       IconButton(
                         tooltip: 'Account',
                         onPressed: () async {
+                          if (authRequired) {
+                            await login();
+                            return;
+                          }
                           if (await confirm(
                             'Switch account?',
                             '${session['name']}',
                           )) {
                             try {
                               await request('logout');
+                              if (!mounted) return;
+                              cancelCalculation();
                               adminTimer?.cancel();
                               planner.restore({'points': []});
                               setState(() {
@@ -1060,6 +1187,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                   'development': session['development'],
                                 };
                                 routes = [];
+                                authRequired = false;
                                 activeRides = [];
                                 page = 'home';
                               });
@@ -1071,6 +1199,18 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+              if (authRequired)
+                ListTile(
+                  dense: true,
+                  title: Text(
+                    tracking['message']?.toString() ??
+                        'Session expired. Sign in to resume syncing.',
+                  ),
+                  trailing: TextButton(
+                    onPressed: login,
+                    child: const Text('Sign in'),
+                  ),
+                ),
               if (error != null)
                 Material(
                   color: const Color(0xff213c3a),
@@ -1096,14 +1236,14 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                           FloatingActionButton.small(
                             heroTag: 'plus',
                             tooltip: 'Zoom in',
-                            onPressed: () => Bridge.call('zoom', {'in': true}),
+                            onPressed: () => command('zoom', {'in': true}),
                             child: const Icon(Icons.add),
                           ),
                           const SizedBox(height: 8, width: 8),
                           FloatingActionButton.small(
                             heroTag: 'minus',
                             tooltip: 'Zoom out',
-                            onPressed: () => Bridge.call('zoom', {'in': false}),
+                            onPressed: () => command('zoom', {'in': false}),
                             child: const Icon(Icons.remove),
                           ),
                           const SizedBox(height: 8, width: 8),
@@ -1158,7 +1298,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                             size: 12,
                                           ),
                                           title: Text(
-                                            '${ride['driver_name']} · LIVE',
+                                            '${ride['driver_name']} · ${ride['location_stale'] == true ? session['tracking_stale_label'] ?? '' : 'LIVE'}',
                                           ),
                                           subtitle: Text(
                                             '${ride['route_name']}\n${ride['vehicle_number']} · GPS ${ride['location_recorded_at'] ?? 'not received'}',
@@ -1166,7 +1306,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                           isThreeLine: true,
                                           onTap: ride['latitude'] == null
                                               ? null
-                                              : () => request('center', ride),
+                                              : () => command('center', ride),
                                         ),
                                     ],
                                   ),
@@ -1309,7 +1449,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                     'Discard recording?',
                                     'Stop the native recorder and discard the unsaved track.',
                                   )) {
-                                    await request('record.cancel');
+                                    await command('record.cancel');
                                   }
                                 },
                                 child: const Text('Discard'),
@@ -1318,7 +1458,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             const SizedBox(width: 12),
                             Expanded(
                               child: FilledButton(
-                                onPressed: () => request('record.stop'),
+                                onPressed: () => command('record.stop'),
                                 child: const Text('Stop & save'),
                               ),
                             ),
@@ -1431,7 +1571,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                           children: [
                             Expanded(
                               child: FilledButton.icon(
-                                onPressed: () => request('record'),
+                                onPressed: () => command('record'),
                                 icon: const Icon(Icons.fiber_manual_record),
                                 label: const Text('Record route'),
                               ),
@@ -1470,9 +1610,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                   height: landscape ? 56 : 80,
                   selectedIndex: page == 'routes' ? 1 : 0,
                   onDestinationSelected: (i) {
-                    changePage((isAdmin
-                        ? ['home', 'routes']
-                        : ['home', 'routes', 'planner'])[i]);
+                    changePage(
+                      (isAdmin
+                          ? ['home', 'routes']
+                          : ['home', 'routes', 'planner'])[i],
+                    );
                   },
                   destinations: [
                     const NavigationDestination(
@@ -1531,15 +1673,17 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                       onPressed: () async {
                         try {
                           final user = await request('login', {'name': name});
+                          if (!mounted) return;
+                          authRequired = false;
                           setState(
                             () => session = {
                               ...session,
                               ...Map<String, dynamic>.from(user as Map),
                             },
                           );
-                          await refresh();
+                          await restore();
                         } catch (_) {
-                          login(name);
+                          if (mounted) login(name);
                         }
                       },
                       child: Padding(
@@ -1606,9 +1750,20 @@ class NavigationStatusOverlay extends StatelessWidget {
       return Row(
         children: [
           Expanded(
-            child: Text(
-              '${_minutes(value['duration_seconds'])} · ${_km(value['distance_meters'])} · ETA ${_eta(value['duration_seconds'])}\n${(value['speed'] as num? ?? 0).round()} km/h${(value['speed_limit'] as num? ?? -1) > 0 ? ' · Limit ${(value['speed_limit'] as num).round()}' : ''}',
-              style: const TextStyle(fontSize: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${_minutes(value['duration_seconds'])} · ${_km(value['distance_meters'])} · ETA ${_eta(value['duration_seconds'])}\n${(value['speed'] as num? ?? 0).round()} km/h${(value['speed_limit'] as num? ?? -1) > 0 ? ' · Limit ${(value['speed_limit'] as num).round()}' : ''}',
+                  style: const TextStyle(fontSize: 20),
+                ),
+                if (value['tracking_message'] != null)
+                  Text(
+                    value['tracking_message'].toString(),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+              ],
             ),
           ),
           FilledButton(onPressed: onEndRide, child: const Text('End ride')),

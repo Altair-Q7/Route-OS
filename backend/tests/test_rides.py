@@ -3,7 +3,7 @@ from conftest import api, auth_headers
 
 POINTS = [
     {"latitude": 12.9716, "longitude": 77.5946, "timestamp": "2026-09-28T10:00:00Z"},
-    {"latitude": 12.9720, "longitude": 77.5950, "timestamp": "2026-09-28T10:10:00Z"},
+    {"latitude": 12.9920, "longitude": 77.6150, "timestamp": "2026-09-28T10:10:00Z"},
 ]
 
 
@@ -123,20 +123,23 @@ def test_location_reports_hub_proximity():
         ride = _start(client, user, headers, route["id"]).json()
         at_hub = _locate(client, user, headers, ride["id"], 12.9716, 77.5946)
         assert at_hub.status_code == 201, at_hub.text
-        assert at_hub.json()["arrived"] is True
+        assert at_hub.json()["arrived"] is False
         assert at_hub.json()["distance_to_hub_m"] == 0.0
+        destination = _locate(client, user, headers, ride["id"], 12.9920, 77.6150)
+        assert destination.json()["arrived"] is True
+        assert destination.json()["distance_to_destination_m"] == 0.0
         far = _locate(client, user, headers, ride["id"], 13.5, 78.0)
         assert far.status_code == 201, far.text
         assert far.json()["arrived"] is False
         assert far.json()["distance_to_hub_m"] > 1000
 
 
-def test_arrive_at_hub_ends_ride_and_logs_event():
+def test_arrive_at_destination_ends_ride_and_logs_event():
     with api() as client:
         user, headers = _driver(client, "Arriving Driver")
         route = _route(client, user, headers, hub=(12.9716, 77.5946))
         ride = _start(client, user, headers, route["id"]).json()
-        _locate(client, user, headers, ride["id"], 12.9716, 77.5946)
+        _locate(client, user, headers, ride["id"], 12.9920, 77.6150)
         arrived = client.post(
             f"/api/v1/rides/{ride['id']}/arrive",
             json={"driver_id": user["id"]},
@@ -166,7 +169,7 @@ def test_arrive_far_from_hub_is_rejected():
         assert response.status_code == 409, response.text
 
 
-def test_arrive_without_hub_allows_manual_completion():
+def test_arrive_requires_location_but_explicit_end_allows_manual_completion():
     with api() as client:
         user, headers = _driver(client, "Manual Arrival Driver")
         route = _route(client, user, headers)
@@ -175,6 +178,10 @@ def test_arrive_without_hub_allows_manual_completion():
             f"/api/v1/rides/{ride['id']}/arrive",
             json={"driver_id": user["id"]},
             headers=headers,
+        )
+        assert response.status_code == 409, response.text
+        response = client.post(
+            f"/api/v1/rides/{ride['id']}/end", json={"driver_id": user["id"]}, headers=headers
         )
         assert response.status_code == 200, response.text
         assert response.json()["status"] == "ended"

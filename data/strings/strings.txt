@@ -45246,3 +45246,38 @@ zh-Hant = 語音搜尋
 comment = Title of the RouteOS shared routes screen
 tags = android-app
 en = RouteOS Saved Routes
+
+[routeos_tracking_live]
+comment = Driver's GPS uploads have been acknowledged by the RouteOS backend
+tags = android-app
+en = Live tracking connected
+
+[routeos_tracking_offline]
+comment = RouteOS keeps GPS samples locally while waiting for a network connection
+tags = android-app
+en = Tracking offline — GPS updates are queued for retry
+
+[routeos_tracking_auth_required]
+comment = Expired RouteOS session during a ride; navigation continues
+tags = android-app
+en = Tracking paused — sign in again to resume uploads
+
+[routeos_tracking_waiting_gps]
+comment = RouteOS is waiting for the first GPS sample during a ride
+tags = android-app
+en = Tracking is waiting for GPS
+
+[routeos_tracking_storage_error]
+comment = RouteOS could not persist a location sample on the device
+tags = android-app
+en = Could not save GPS updates on this device
+
+[routeos_tracking_rejected]
+comment = The RouteOS backend rejected an invalid GPS sample
+tags = android-app
+en = A GPS update was rejected by the server
+
+[routeos_tracking_stale]
+comment = Admin tracking label when no recent GPS sample is available
+tags = android-app
+en = GPS outdated

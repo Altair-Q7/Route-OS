@@ -18,7 +18,7 @@ The API is available at `http://127.0.0.1:8000`.
 The MVP API provides:
 
 - `GET /health` — liveness probe; the Android client checks it before login.
-- `POST /api/v1/users` — create an account (startup seeding uses the same path).
+- `POST /api/v1/users` — create a driver account.
 - `POST /api/v1/auth/login` — password login, or seeded quick-login in explicitly enabled development mode.
 - `POST /api/v1/auth/logout` — revoke the current bearer session.
 - `POST /api/v1/planned-routes` — persist ordered waypoints and native OM distance/duration.
@@ -32,8 +32,9 @@ The MVP API provides:
 - `POST /api/v1/rides/{id}/locations` — publish the driver's current location.
 - `GET /api/v1/rides/active` — list active rides for the admin map.
 - `POST /api/v1/rides/{id}/end` — end the ride and stop live tracking.
+- `POST /api/v1/rides/{id}/arrive` — confirm arrival within 150 metres of the destination using GPS no older than two minutes.
 - `GET /api/v1/drivers/{id}/active-ride` — resume an interrupted ride on login.
-- `POST /api/v1/events` — append a RouteOS activity event.
+- `POST /api/v1/events` — admin-only custom activity events; server action kinds are reserved.
 - `GET /api/v1/events` — recent RouteOS activity log.
 - `GET /api/v1/manifest` — product metadata and the supported feature list.
 
@@ -65,8 +66,21 @@ Set `ROUTEOS_DATABASE` to the persistent SQLite path and `ROUTEOS_CORS_ORIGINS`
 to explicit allowed origins if browser clients are used. Back up the database
 before deploying; startup migrations preserve existing routes/tracks/rides.
 
-The Android client targets `http://127.0.0.1:8000`, so expose the backend to the
-device or emulator with `adb reverse tcp:8000 tcp:8000` (see `README-ROUTEOS.md`).
+The Android client defaults to `https://route-os-backend.onrender.com`. To use a
+local backend, configure `http://127.0.0.1:8000` in a debug build and expose it with
+`adb reverse tcp:8000 tcp:8000`. Changing servers signs out the current account;
+end any active ride or recording first.
+
+Startup preserves provisioned passwords and existing sessions. Seeded accounts
+have no production password until explicitly provisioned.
+
+Android navigation persists up to 1,000 GPS samples in an account/server-scoped
+SQLite outbox and retries network/server failures with backoff. Samples include
+`sample_id`, UTC `recorded_at`, and optional `accuracy_meters`; retries are
+deduplicated by `(ride_id, sample_id)`. Admin markers use the newest recorded
+timestamp and flag GPS older than 30 seconds. Expired sessions retain queued
+samples and allow the same driver to sign in during a ride. Native arrival keeps
+tracking active until an explicit server-confirmed End Ride.
 
 ## Verify
 

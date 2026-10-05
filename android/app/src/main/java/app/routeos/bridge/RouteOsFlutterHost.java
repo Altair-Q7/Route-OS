@@ -1,6 +1,7 @@
 package app.routeos.bridge;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.view.MotionEvent;
 import android.view.View;
@@ -11,16 +12,17 @@ import app.organicmaps.MwmApplication;
 import app.organicmaps.sdk.Framework;
 import app.organicmaps.sdk.MapView;
 import app.organicmaps.sdk.Router;
+import app.organicmaps.sdk.bookmarks.data.BookmarkManager;
 import app.organicmaps.sdk.location.LocationState;
 import app.organicmaps.sdk.routing.*;
 import app.organicmaps.sdk.search.*;
 import app.routeos.RouteOsApi;
+import app.routeos.RouteOsDraftStore;
 import app.routeos.RouteOsTrackPreview;
-import app.organicmaps.sdk.bookmarks.data.BookmarkManager;
+import io.flutter.embedding.android.FlutterSurfaceView;
+import io.flutter.embedding.android.FlutterView;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.embedding.engine.dart.DartExecutor;
-import io.flutter.embedding.android.FlutterView;
-import io.flutter.embedding.android.FlutterSurfaceView;
 import io.flutter.plugin.common.*;
 import io.flutter.plugin.platform.*;
 import java.util.*;
@@ -39,6 +41,7 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
   private long searchStamp;
   private Runnable pendingCalculation;
   private boolean calculating;
+  private long calculationGeneration;
   private boolean selectedPoint;
   private boolean arrivalSent;
   private long restoringRideId;
@@ -46,6 +49,17 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
   private JSONObject pendingRideData;
   private long previewGeneration;
   private long recordedPreviewId;
+  private final SharedPreferences.OnSharedPreferenceChangeListener trackingListener = this::trackingChanged;
+  private void trackingChanged(SharedPreferences prefs, String key)
+  {
+    if ("tracking_state".equals(key) || "tracking_pending".equals(key))
+      emitTrackingStatus();
+    if ("active_ride_id".equals(key) && prefs.getLong("active_ride_id", 0) == 0 && !closed)
+      activity.runOnUiThread(() -> {
+        if (!closed)
+          activity.routeOsFlutterFinishRide();
+      });
+  }
   private final Runnable rideBuildTimeout = () -> {
     if (pendingRideResult != null) {
       routeFailed("Navigation build timed out. Check offline map coverage and retry.", -1);
@@ -82,12 +96,21 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
     });
     methods = new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), "routeos/v1/methods");
     methods.setMethodCallHandler(this::command);
-    new EventChannel(engine.getDartExecutor().getBinaryMessenger(), "routeos/v1/events").setStreamHandler(new EventChannel.StreamHandler() {
-      public void onListen(Object args, EventChannel.EventSink value) { sink = value; }
-      public void onCancel(Object args) { sink = null; }
-    });
+    new EventChannel(engine.getDartExecutor().getBinaryMessenger(), "routeos/v1/events")
+        .setStreamHandler(new EventChannel.StreamHandler() {
+          public void onListen(Object args, EventChannel.EventSink value)
+          {
+            sink = value;
+            emitTrackingStatus();
+          }
+          public void onCancel(Object args)
+          {
+            sink = null;
+          }
+        });
     SearchEngine.INSTANCE.addListener(this);
     BookmarkManager.INSTANCE.addLoadingListener(this);
+    activity.getSharedPreferences("routeos", 0).registerOnSharedPreferenceChangeListener(trackingListener);
     view = new FlutterView(activity, new FlutterSurfaceView(activity));
     view.attachToFlutterEngine(engine);
     engine.getDartExecutor().executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault());
@@ -117,20 +140,39 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
     closed = true; sink = null; handler.removeCallbacksAndMessages(null);
     SearchEngine.INSTANCE.removeListener(this); io.shutdownNow(); methods.setMethodCallHandler(null);
     BookmarkManager.INSTANCE.removeLoadingListener(this);
+    activity.getSharedPreferences("routeos", 0).unregisterOnSharedPreferenceChangeListener(trackingListener);
     view.detachFromFlutterEngine(); engine.getPlatformViewsController().detach(); engine.getPlatformViewsController2().detach(); engine.destroy();
   }
   public void emit(String type, Object data) {
     activity.runOnUiThread(() -> { if (!closed && sink != null) sink.success(java.util.Map.of("version", 1, "type", type, "data", data)); });
   }
+  private void emitTrackingStatus()
+  {
+    var prefs = activity.getSharedPreferences("routeos", 0);
+    String state = prefs.getString("tracking_state", "waiting_gps");
+    int label = switch (state)
+    {
+      case "live" -> app.organicmaps.R.string.routeos_tracking_live;
+      case "stale" -> app.organicmaps.R.string.routeos_tracking_stale;
+      case "offline" -> app.organicmaps.R.string.routeos_tracking_offline;
+      case "auth_required" -> app.organicmaps.R.string.routeos_tracking_auth_required;
+      case "storage_error" -> app.organicmaps.R.string.routeos_tracking_storage_error;
+      case "rejected" -> app.organicmaps.R.string.routeos_tracking_rejected;
+      default -> app.organicmaps.R.string.routeos_tracking_waiting_gps;
+    };
+    emit("tracking.status", java.util.Map.of("state", state, "message", activity.getString(label), "pending",
+                                             prefs.getInt("tracking_pending", 0)));
+  }
   public void routeReady() {
-    if (!calculating) return;
-    calculating = false;
+    if (!calculating)
+      return;
     RoutingInfo info = Framework.nativeGetRouteFollowingInfo();
     if (info == null) { routeFailed("Routing returned no summary. Try again.", -1); return; }
     if ((pendingRideResult != null || restoringRideId > 0) && !Framework.nativeIsRouteBuilt()) {
       routeFailed("Navigation could not be built. Check regional map coverage and retry.", -1);
       return;
     }
+    calculating = false;
     if (pendingRideResult != null) {
       MethodChannel.Result result = pendingRideResult;
       JSONObject data = pendingRideData;
@@ -147,7 +189,8 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
       return;
     }
     if (restoringRideId == 0) Framework.nativeRouteOsShowRouteOverview();
-    emit("route.ready", java.util.Map.of("distance_meters", meters(info.distToTarget), "duration_seconds", info.totalTimeInSeconds));
+    emit("route.ready", java.util.Map.of("generation", calculationGeneration, "distance_meters",
+                                         meters(info.distToTarget), "duration_seconds", info.totalTimeInSeconds));
     if(restoringRideId>0){
       long rideId=restoringRideId;restoringRideId=0;
       if(activity.getSharedPreferences("routeos",0).getLong("active_ride_id",0)==rideId){
@@ -171,12 +214,14 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
       "distance_meters",Math.max(0,meters(info.distToTarget)),"duration_seconds",Math.max(0,info.totalTimeInSeconds)));
   }
   public void routeFailed(String message, int code) {
+    if (!calculating && pendingRideResult == null && restoringRideId == 0)
+      return;
     calculating = false;
     restoringRideId = 0;
     handler.removeCallbacks(rideBuildTimeout);
     if (pendingRideResult != null) pendingRideResult.error("ROUTE_FAILED", message, null);
     pendingRideResult = null; pendingRideData = null;
-    emit("route.failed", java.util.Map.of("message", message, "code", code));
+    emit("route.failed", java.util.Map.of("generation", calculationGeneration, "message", message, "code", code));
   }
   private static double meters(app.organicmaps.sdk.util.Distance distance) {
     return distance.mDistance * switch(distance.mUnits) {
@@ -234,12 +279,22 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
         case "close" -> { activity.finish(); result.success(null); }
         case "session" -> {
           var prefs = activity.getSharedPreferences("routeos", Context.MODE_PRIVATE);
-          result.success(java.util.Map.of("id", prefs.getLong("driver_id",0), "name", prefs.getString("driver_name", ""), "role", prefs.getString("role", "driver"),
-            "development", (activity.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0,
-            "active_ride_id", prefs.getLong("active_ride_id",0), "recording", app.organicmaps.sdk.location.TrackRecorder.nativeIsTrackRecordingEnabled()));
+          result.success(java.util.Map.of(
+              "id", prefs.getLong("driver_id", 0), "name", prefs.getString("driver_name", ""), "role",
+              prefs.getString("role", "driver"), "development",
+              (activity.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+              "active_ride_id", prefs.getLong("active_ride_id", 0), "recording",
+              app.organicmaps.sdk.location.TrackRecorder.nativeIsTrackRecordingEnabled(), "tracking_stale_label",
+              activity.getString(app.organicmaps.R.string.routeos_tracking_stale)));
         }
         case "login" -> async(result, () -> RouteOsApi.login(activity, data.getString("name"), data.optString("password", null)));
-        case "server" -> { RouteOsApi.setBaseUrl(activity, data.getString("url")); result.success(null); }
+        case "server" ->
+        {
+          if (app.organicmaps.sdk.location.TrackRecorder.nativeIsTrackRecordingEnabled())
+            throw new IllegalStateException("Stop recording before changing servers");
+          RouteOsApi.setBaseUrl(activity, data.getString("url"));
+          result.success(null);
+        }
         case "maps.download" -> { activity.startActivity(new android.content.Intent(activity, app.organicmaps.downloader.DownloaderActivity.class)); result.success(null); }
         case "routes" -> loadRoutes(result);
         case "route" -> {
@@ -257,12 +312,28 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
         case "recent.clear" -> async(result, () -> RouteOsApi.clearRecent(activity, data.getLong("id")));
         case "share" -> async(result, () -> RouteOsApi.shareRoute(activity, data.getLong("id"), data.optLong("recipient_id",0)));
         case "save" -> async(result, () -> RouteOsApi.post(activity, "/api/v1/planned-routes", data));
-        case "draft.save" -> { activity.getSharedPreferences("routeos",0).edit().putString("planner_draft", data.toString()).apply(); result.success(null); }
-        case "draft.load" -> result.success(plain(new JSONObject(activity.getSharedPreferences("routeos",0).getString("planner_draft", "{}"))));
+        case "draft.save" ->
+        {
+          RouteOsDraftStore.save(activity.getSharedPreferences("routeos", 0), data.toString());
+          result.success(null);
+        }
+        case "draft.load" ->
+        {
+          result.success(plain(new JSONObject(RouteOsDraftStore.load(activity.getSharedPreferences("routeos", 0)))));
+        }
         case "logout" -> {
           if (activity.getSharedPreferences("routeos",0).getLong("active_ride_id",0) != 0 || app.organicmaps.sdk.location.TrackRecorder.nativeIsTrackRecordingEnabled()) throw new IllegalStateException("End the ride/recording before switching accounts");
           async(result, () -> {
-            RouteOsApi.post(activity,"/api/v1/auth/logout",new JSONObject()); RouteOsApi.logout(activity);
+            try
+            {
+              RouteOsApi.post(activity, "/api/v1/auth/logout", new JSONObject());
+            }
+            catch (RouteOsApi.ApiException expired)
+            {
+              if (expired.status != 401)
+                throw expired;
+            }
+            RouteOsApi.logout(activity);
             activity.runOnUiThread(() -> { if (!closed) {
               recordedPreviewId=0; previewGeneration++;
               Framework.nativeClearApiPoints(); RoutingController.get().cancel(); RouteOsTrackPreview.clear(activity);
@@ -291,10 +362,24 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
           result.success(null);
         }
         case "calculate" -> {
-          if (RoutingController.get().isNavigating()) throw new IllegalStateException("End navigation before editing a route");
+          if (RoutingController.get().isNavigating() || pendingRideResult != null)
+            throw new IllegalStateException("End navigation before editing a route");
           calculating = false;
           if (pendingCalculation != null) handler.removeCallbacks(pendingCalculation);
-          pendingCalculation = () -> { if (!closed) try { calculate(data); } catch (Exception failure) { emit("route.failed", java.util.Map.of("message",failure.getMessage())); } };
+          RoutingController.get().cancel();
+          pendingCalculation = () ->
+          {
+            if (!closed)
+              try
+              {
+                calculate(data);
+              }
+              catch (Exception failure)
+              {
+                emit("route.failed",
+                     java.util.Map.of("generation", data.optLong("generation", 0), "message", failure.getMessage()));
+              }
+          };
           handler.postDelayed(pendingCalculation, 250); result.success(null);
         }
         case "search" -> {
@@ -307,21 +392,50 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
         case "ride.start" -> {
           startRideCommand(data, result);
         }
-        case "ride.restore" -> async(result, () -> {
-          JSONObject ride=RouteOsApi.getOwnActiveRide(activity);
-          if(!RoutingController.get().isNavigating()){
-            JSONObject route=RouteOsApi.getRoute(activity,ride.getLong("route_id"));
-            activity.runOnUiThread(()->{if(!closed)try{
-              restoringRideId=ride.getLong("id");
-              JSONObject definition="recorded".equals(route.optString("route_type"))
-                  ? recordedNavigationDefinition(route)
-                  : navigationDefinition(nativeRoutePoints());
-              calculate(definition);
-            }catch(Exception failure){routeFailed(failure.getMessage(),-1);}});
-          }
-          return ride;
-        });
-        case "ride.end" -> async(result, () -> { RouteOsApi.endRide(activity,activity.getSharedPreferences("routeos",0).getLong("active_ride_id",0)); activity.runOnUiThread(activity::routeOsFlutterFinishRide); return java.util.Map.of("ended",true); });
+        case "ride.restore" ->
+          async(result, () -> {
+            JSONObject ride;
+            try
+            {
+              ride = RouteOsApi.getOwnActiveRide(activity);
+            }
+            catch (RouteOsApi.ApiException missingRide)
+            {
+              if (missingRide.status != 404)
+                throw missingRide;
+              RouteOsApi.clearActiveRide(activity);
+              return null;
+            }
+            activity.getSharedPreferences("routeos", 0).edit().putLong("active_ride_id", ride.getLong("id")).apply();
+            if (!RoutingController.get().isNavigating())
+            {
+              JSONObject route = RouteOsApi.getRoute(activity, ride.getLong("route_id"));
+              activity.runOnUiThread(() -> {
+                if (!closed)
+                  try
+                  {
+                    restoringRideId = ride.getLong("id");
+                    RouteMarkData[] saved = Framework.nativeGetRoutePoints();
+                    JSONArray points = saved.length >= 2 && saved[0].mIsMyPosition ? nativeRoutePoints()
+                                                                                   : route.getJSONArray("points");
+                    JSONObject definition = "recorded".equals(route.optString("route_type"))
+                                              ? recordedNavigationDefinition(route)
+                                              : navigationDefinition(points);
+                    calculate(definition);
+                  }
+                  catch (Exception failure)
+                  {
+                    routeFailed(failure.getMessage(), -1);
+                  }
+              });
+            }
+            return ride;
+          });
+        case "ride.end" ->
+          async(result, () -> {
+            RouteOsApi.endRide(activity, activity.getSharedPreferences("routeos", 0).getLong("active_ride_id", 0));
+            return java.util.Map.of("ended", true);
+          });
         case "active" -> async(result, () -> RouteOsApi.getActiveRides(activity));
         case "admin.points" -> {
           if (!"admin".equals(activity.getSharedPreferences("routeos",0).getString("role","driver"))) throw new IllegalStateException("Admin only");
@@ -348,7 +462,9 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
     JSONArray points = data.getJSONArray("points");
     if (points.length()>102) throw new IllegalArgumentException("Organic Maps supports at most 102 route points");
     RoutingController controller = RoutingController.get();
+    calculating = false;
     controller.cancel(); Framework.nativeRemoveRoutePoints();
+    calculationGeneration = data.optLong("generation", 0);
     controller.prepare(null,null,Router.Vehicle);
     for (int i=0;i<points.length();i++) {
       JSONObject p=points.getJSONObject(i);
@@ -386,13 +502,20 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
               handler.postDelayed(rideBuildTimeout, 60_000);
               calculate(definition);
             } catch (Exception failure) {
+              pendingRideResult = null;
+              pendingRideData = null;
+              calculating = false;
+              handler.removeCallbacks(rideBuildTimeout);
               result.error("INVALID_COMMAND", failure.getMessage(), null);
             }
           });
         } catch (Exception error) {
-          activity.runOnUiThread(() -> result.error(
-              error instanceof RouteOsApi.ApiException api && api.status == 401 ? "AUTH_EXPIRED" : "REQUEST_FAILED",
-              error.getMessage(), null));
+          activity.runOnUiThread(() -> {
+            if (!closed)
+              result.error(
+                  error instanceof RouteOsApi.ApiException api && api.status == 401 ? "AUTH_EXPIRED" : "REQUEST_FAILED",
+                  error.getMessage(), null);
+          });
         }
       });
     } catch (RejectedExecutionException stopped) {

@@ -336,7 +336,7 @@ public final class RouteOsHomeOverlay
       }
       catch (Exception error)
       {
-        if (error.getMessage() != null && error.getMessage().contains("404"))
+        if (error instanceof RouteOsApi.ApiException api && api.status == 404)
           RouteOsApi.clearActiveRide(mActivity);
       }
       final JSONArray finalRoutes = routes;

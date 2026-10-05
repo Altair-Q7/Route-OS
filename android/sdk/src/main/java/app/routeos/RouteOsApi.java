@@ -26,30 +26,69 @@ public final class RouteOsApi {
     return new ApiException(connection.getResponseCode(),body);
   }
   /** Default RouteOS deployment. A local debug server can still be selected in RouteOS settings. */
-  private static final String DEFAULT_API = "https://route-os-backend.onrender.com";
+  public static final String DEFAULT_API = "https://route-os-backend.onrender.com";
   private RouteOsApi() {}
 
   public static String baseUrl(@NonNull Context context) {
     String saved = context.getSharedPreferences("routeos", Context.MODE_PRIVATE)
         .getString("api_base_url", null);
-    if (saved != null && !saved.isEmpty()) { validateBaseUrl(context, saved); return saved; }
+    if (saved != null && !saved.isEmpty())
+      return normalizeBaseUrl(context, saved);
     return DEFAULT_API;
   }
 
   public static void setBaseUrl(@NonNull Context context, @NonNull String baseUrl) {
-    baseUrl = baseUrl.trim();
-    validateBaseUrl(context, baseUrl);
+    baseUrl = normalizeBaseUrl(context, baseUrl);
+    var prefs = context.getSharedPreferences("routeos", Context.MODE_PRIVATE);
+    if (baseUrl.equals(baseUrl(context)))
+      return;
+    if (prefs.getLong("active_ride_id", 0) > 0)
+      throw new IllegalStateException("End the ride before changing servers");
+    // Bind drafts from older clients to the server that owned their account IDs.
+    var drafts = prefs.edit();
+    String oldServer = baseUrl(context);
+    for (String key : prefs.getAll().keySet())
+    {
+      String driver = key.equals("planner_draft")      ? Long.toString(prefs.getLong("driver_id", 0))
+                    : key.startsWith("planner_draft_") ? key.substring("planner_draft_".length())
+                                                       : "";
+      if (!driver.matches("[0-9]+"))
+        continue;
+      String scoped = "planner_draft_" + oldServer + "_" + driver;
+      if (!driver.equals("0") && !prefs.contains(scoped))
+        drafts.putString(scoped, prefs.getString(key, "{}"));
+      drafts.remove(key);
+    }
+    drafts.apply();
+    logout(context);
     context.getSharedPreferences("routeos", Context.MODE_PRIVATE).edit()
         .putString("api_base_url", baseUrl).apply();
   }
 
-  private static void validateBaseUrl(@NonNull Context context, @NonNull String baseUrl) {
-    android.net.Uri uri = android.net.Uri.parse(baseUrl);
-    if (uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null)
+  static String normalizeBaseUrl(@NonNull Context context, @NonNull String baseUrl)
+  {
+    java.net.URI uri;
+    try
+    {
+      uri = new java.net.URI(baseUrl.trim()).normalize();
+    }
+    catch (java.net.URISyntaxException error)
+    {
+      throw new IllegalArgumentException("Enter a valid RouteOS server URL", error);
+    }
+    if (uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null
+        || uri.getPort() == 0 || uri.getPort() > 65535)
       throw new IllegalArgumentException("Enter a valid RouteOS server URL without credentials, query or fragment");
     boolean localDebug = (context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
-        && "http".equals(uri.getScheme()) && ("127.0.0.1".equals(uri.getHost()) || "10.0.2.2".equals(uri.getHost()));
-    if (!"https".equals(uri.getScheme()) && !localDebug) throw new IllegalArgumentException("RouteOS requires HTTPS");
+                      && "http".equalsIgnoreCase(uri.getScheme())
+                      && ("127.0.0.1".equals(uri.getHost()) || "10.0.2.2".equals(uri.getHost()));
+    if (!"https".equalsIgnoreCase(uri.getScheme()) && !localDebug)
+      throw new IllegalArgumentException("RouteOS requires HTTPS");
+    String path = uri.getRawPath();
+    while (path.endsWith("/"))
+      path = path.substring(0, path.length() - 1);
+    return uri.getScheme().toLowerCase(java.util.Locale.ROOT) + "://"
+  + uri.getRawAuthority().toLowerCase(java.util.Locale.ROOT) + path;
   }
 
   private static String token(@NonNull Context context) {
@@ -62,9 +101,12 @@ public final class RouteOsApi {
 
   public static JSONObject login(@NonNull Context context, @NonNull String name, String password) throws Exception {
     var prefs=context.getSharedPreferences("routeos",0);
+    name = name.trim();
     if(prefs.getLong("active_ride_id",0)>0 && !name.equalsIgnoreCase(prefs.getString("driver_name","")))
       throw new IllegalStateException("Sign in as the active ride's driver, or end the ride before switching accounts");
     JSONObject user = post(context, "/api/v1/auth/login", new JSONObject().put("name", name.trim()).put("password", password));
+    if (prefs.getLong("active_ride_id", 0) > 0 && user.getLong("id") != prefs.getLong("driver_id", 0))
+      throw new IllegalStateException("Sign in as the active ride's driver");
     android.content.SharedPreferences.Editor editor =
         context.getSharedPreferences("routeos", Context.MODE_PRIVATE).edit()
             .putLong("driver_id", user.getLong("id"))
@@ -73,6 +115,8 @@ public final class RouteOsApi {
     String freshToken = user.optString("auth_token", null);
     if (freshToken != null && !freshToken.isEmpty()) RouteOsCredentials.store(context, freshToken);
     editor.apply();
+    if (prefs.getLong("active_ride_id", 0) > 0)
+      RouteOsLocationUploader.get(context).start();
     return user;
   }
 
@@ -163,8 +207,12 @@ public final class RouteOsApi {
     long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
     JSONObject ride = post(context, "/api/v1/rides", new JSONObject().put("driver_id", driverId)
         .put("route_id", routeId).put("vehicle_type", vehicleType).put("vehicle_number", vehicleNumber));
-    context.getSharedPreferences("routeos", Context.MODE_PRIVATE).edit()
-        .putLong("active_ride_id", ride.getLong("id")).apply();
+    context.getSharedPreferences("routeos", Context.MODE_PRIVATE)
+        .edit()
+        .putLong("active_ride_id", ride.getLong("id"))
+        .putString("tracking_state", "waiting_gps")
+        .remove("tracking_last_upload")
+        .apply();
     return ride;
   }
 
@@ -179,14 +227,22 @@ public final class RouteOsApi {
 
   public static void endRide(@NonNull Context context, long rideId) throws Exception {
     long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
-    post(context, "/api/v1/rides/" + rideId + "/end", new JSONObject().put("driver_id", driverId));
-    context.getSharedPreferences("routeos", Context.MODE_PRIVATE).edit().remove("active_ride_id").apply();
+    try
+    {
+      post(context, "/api/v1/rides/" + rideId + "/end", new JSONObject().put("driver_id", driverId));
+    }
+    catch (ApiException missingRide)
+    {
+      if (missingRide.status != 404)
+        throw missingRide;
+    }
+    clearActiveRide(context);
   }
 
   public static JSONObject arriveRide(@NonNull Context context, long rideId) throws Exception {
     long driverId = context.getSharedPreferences("routeos", Context.MODE_PRIVATE).getLong("driver_id", 0);
     JSONObject arrived = post(context, "/api/v1/rides/" + rideId + "/arrive", new JSONObject().put("driver_id", driverId));
-    context.getSharedPreferences("routeos", Context.MODE_PRIVATE).edit().remove("active_ride_id").apply();
+    clearActiveRide(context);
     return arrived;
   }
 
@@ -203,18 +259,28 @@ public final class RouteOsApi {
   }
 
   public static void clearActiveRide(@NonNull Context context) {
-    context.getSharedPreferences("routeos", Context.MODE_PRIVATE).edit()
-        .remove("active_ride_id").remove("active_route_id").remove("active_route_name")
-        .remove("active_destination_lat").remove("active_destination_lon").remove("ride_arrived").apply();
+    context.getSharedPreferences("routeos", Context.MODE_PRIVATE)
+        .edit()
+        .remove("active_ride_id")
+        .remove("active_route_id")
+        .remove("active_route_name")
+        .remove("active_destination_lat")
+        .remove("active_destination_lon")
+        .remove("ride_arrived")
+        .remove("tracking_state")
+        .remove("tracking_last_upload")
+        .remove("tracking_pending")
+        .apply();
   }
 
   public static void logout(@NonNull Context context) {
     RouteOsCredentials.clear(context);
     android.content.SharedPreferences prefs =
         context.getSharedPreferences("routeos", Context.MODE_PRIVATE);
-    String baseUrl = prefs.getString("api_base_url", null);
-    android.content.SharedPreferences.Editor editor = prefs.edit().clear();
-    if (baseUrl != null && !baseUrl.isEmpty()) editor.putString("api_base_url", baseUrl);
+    android.content.SharedPreferences.Editor editor = prefs.edit();
+    for (String key : prefs.getAll().keySet())
+      if (!key.equals("api_base_url") && !key.startsWith("planner_draft"))
+        editor.remove(key);
     editor.apply();
   }
 
@@ -247,6 +313,7 @@ public final class RouteOsApi {
   private static JSONArray getArray(@NonNull Context context, String path) throws Exception {
     HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl(context) + path).openConnection();
     try {
+      connection.setInstanceFollowRedirects(false);
       connection.setConnectTimeout(3000);
       connection.setReadTimeout(5000);
       attachToken(context, connection);
@@ -260,6 +327,7 @@ public final class RouteOsApi {
   private static JSONObject getObject(@NonNull Context context, String path) throws Exception {
     HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl(context) + path).openConnection();
     try {
+      connection.setInstanceFollowRedirects(false);
       connection.setConnectTimeout(3000);
       connection.setReadTimeout(5000);
       attachToken(context, connection);
@@ -271,11 +339,27 @@ public final class RouteOsApi {
   }
 
   public static JSONObject post(@NonNull Context context, String path, JSONObject body) throws Exception {
-    HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl(context) + path).openConnection();
+    return post(baseUrl(context), token(context), path, body);
+  }
+
+  static JSONObject postForDriver(Context context, String server, long driverId, String path, JSONObject body)
+      throws Exception
+  {
+    if (!server.equals(baseUrl(context))
+        || driverId != context.getSharedPreferences("routeos", 0).getLong("driver_id", 0))
+      throw new IllegalStateException("RouteOS session changed");
+    return post(server, token(context), path, body);
+  }
+
+  private static JSONObject post(String server, String authToken, String path, JSONObject body) throws Exception
+  {
+    HttpURLConnection connection = (HttpURLConnection) new URL(server + path).openConnection();
     try {
+      connection.setInstanceFollowRedirects(false);
       connection.setRequestMethod("POST");
       connection.setRequestProperty("Content-Type", "application/json");
-      attachToken(context, connection);
+      if (authToken != null && !authToken.isEmpty())
+        connection.setRequestProperty("Authorization", "Bearer " + authToken);
       // A recorded ride uploads thousands of GPS points in one request, so uploads need a longer
       // read timeout than the small GET requests above.
       connection.setConnectTimeout(3000);
@@ -283,7 +367,8 @@ public final class RouteOsApi {
       connection.setDoOutput(true);
       byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
       try (OutputStream output = connection.getOutputStream()) { output.write(data); }
-      if (connection.getResponseCode() >= 400) throw httpError(connection);
+      if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300)
+        throw httpError(connection);
       return new JSONObject(readFully(connection.getInputStream()));
     } finally {
       connection.disconnect();
@@ -297,11 +382,13 @@ public final class RouteOsApi {
   private static JSONObject delete(@NonNull Context context, String path) throws Exception {
     HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl(context) + path).openConnection();
     try {
+      connection.setInstanceFollowRedirects(false);
       connection.setRequestMethod("DELETE");
       connection.setConnectTimeout(3000);
       connection.setReadTimeout(5000);
       attachToken(context, connection);
-      if (connection.getResponseCode() >= 400) throw httpError(connection);
+      if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300)
+        throw httpError(connection);
       return new JSONObject(readFully(connection.getInputStream()));
     } finally {
       connection.disconnect();
@@ -311,6 +398,7 @@ public final class RouteOsApi {
   private static JSONObject requestWithBody(@NonNull Context context, @NonNull String method, @NonNull String path, @NonNull JSONObject body) throws Exception {
     HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl(context) + path).openConnection();
     try {
+      connection.setInstanceFollowRedirects(false);
       connection.setRequestMethod(method);
       connection.setRequestProperty("Content-Type", "application/json");
       attachToken(context, connection);
@@ -318,7 +406,8 @@ public final class RouteOsApi {
       connection.setReadTimeout(5000);
       connection.setDoOutput(true);
       try (OutputStream output = connection.getOutputStream()) { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
-      if (connection.getResponseCode() >= 400) throw httpError(connection);
+      if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300)
+        throw httpError(connection);
       return new JSONObject(readFully(connection.getInputStream()));
     } finally {
       connection.disconnect();

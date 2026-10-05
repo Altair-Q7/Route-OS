@@ -16,7 +16,10 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
 import android.location.Location;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.os.SystemClock;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
@@ -40,11 +43,8 @@ import app.organicmaps.sdk.util.Assert;
 import app.organicmaps.sdk.util.Config;
 import app.organicmaps.sdk.util.Graphics;
 import app.organicmaps.sdk.util.log.Logger;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import org.json.JSONObject;
+import app.routeos.RouteOsApi;
+import app.routeos.RouteOsLocationUploader;
 
 public class NavigationService extends Service implements LocationListener
 {
@@ -73,6 +73,9 @@ public class NavigationService extends Service implements LocationListener
   @Nullable
   private Bitmap mLastTurnBitmap;
   private long mRouteOsLastLocationUpload;
+  private RouteOsLocationUploader mRouteOsUploader;
+  private boolean mRouteOsEndingRide;
+  private final Handler mRouteOsUi = new Handler(Looper.getMainLooper());
 
   public static void setOrganicMaps(@NonNull OrganicMaps organicMaps)
   {
@@ -183,6 +186,7 @@ public class NavigationService extends Service implements LocationListener
     Assert.always(sOrganicMaps != null, "OrganicMaps instance must be set before starting NavigationService");
 
     mPlayer = new MediaPlayerWrapper(getApplicationContext());
+    mRouteOsUploader = RouteOsLocationUploader.get(this);
   }
 
   @Override
@@ -191,6 +195,8 @@ public class NavigationService extends Service implements LocationListener
     Logger.i(TAG);
 
     mNotificationBuilder = null;
+    mRouteOsUploader.stop();
+    mRouteOsUi.removeCallbacksAndMessages(null);
     sOrganicMaps.getLocationHelper().removeListener(this);
     TtsPlayer.INSTANCE.stop();
 
@@ -206,14 +212,12 @@ public class NavigationService extends Service implements LocationListener
   }
 
   @Override
-  public int onStartCommand(@NonNull Intent intent, int flags, int startId)
+  public int onStartCommand(@Nullable Intent intent, int flags, int startId)
   {
-    final String action = intent.getAction();
+    final String action = intent == null ? null : intent.getAction();
     if (action != null && action.equals(STOP_NAVIGATION))
     {
       endRouteOsRide();
-      RoutingController.get().cancel();
-      stopSelf();
       return START_NOT_STICKY;
     }
 
@@ -262,6 +266,7 @@ public class NavigationService extends Service implements LocationListener
 
     // Restart the location with more frequent refresh interval for navigation.
     locationHelper.restartWithNewMode();
+    mRouteOsUploader.start();
 
     // Please make this service START_STICKY after fixing the issues at the beginning of the function.
     return START_NOT_STICKY;
@@ -305,7 +310,6 @@ public class NavigationService extends Service implements LocationListener
         return;
       }
       routingController.cancel();
-      arriveRouteOsRide();
       sOrganicMaps.getLocationHelper().restartWithNewMode();
       stopSelf();
       return;
@@ -353,73 +357,47 @@ public class NavigationService extends Service implements LocationListener
   /** Keep admin tracking alive while the navigation Activity is backgrounded. */
   private void uploadRouteOsLocation(@NonNull Location location)
   {
-    long now = System.currentTimeMillis();
+    long now = SystemClock.elapsedRealtime();
     if (now - mRouteOsLastLocationUpload < 5000)
       return;
     long rideId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0);
-    long driverId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("driver_id", 0);
-    if (rideId == 0 || driverId == 0)
+    if (rideId == 0)
       return;
     mRouteOsLastLocationUpload = now;
-    new Thread(() -> {
-      try
-      {
-        JSONObject body = new JSONObject().put("driver_id", driverId).put("latitude", location.getLatitude())
-            .put("longitude", location.getLongitude());
-        if (location.hasSpeed()) body.put("speed_mps", Math.max(0, location.getSpeed()));
-        if (location.hasBearing()) body.put("bearing", Math.max(0, Math.min(360, location.getBearing())));
-        postRouteOs(this, "/api/v1/rides/" + rideId + "/locations", body);
-      }
-      catch (Exception e) { Logger.w(TAG, "RouteOS live location upload failed: " + e.getMessage()); }
-    }, "routeos-live-location").start();
+    mRouteOsUploader.enqueue(location);
   }
 
   private void endRouteOsRide()
   {
     long rideId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0);
-    if (rideId == 0) return;
+    if (rideId == 0)
+    {
+      RoutingController.get().cancel();
+      stopSelf();
+      return;
+    }
+    if (mRouteOsEndingRide)
+      return;
+    mRouteOsEndingRide = true;
     new Thread(() -> {
-      long driverId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("driver_id", 0);
       try
       {
-        postRouteOs(this, "/api/v1/rides/" + rideId + "/end",
-                    new JSONObject().put("driver_id", driverId));
-        clearRouteOsRidePrefs();
+        RouteOsApi.endRide(this, rideId);
+        mRouteOsUi.post(() -> {
+          RoutingController.get().cancel();
+          stopSelf();
+        });
       }
-      catch (Exception e) { Logger.w(TAG, "RouteOS ride end sync failed: " + e.getMessage()); }
+      catch (Exception error)
+      {
+        Logger.w(TAG, "RouteOS ride end sync failed: " + error.getMessage());
+        getSharedPreferences("routeos", MODE_PRIVATE)
+            .edit()
+            .putString("tracking_state",
+                       error instanceof RouteOsApi.ApiException api && api.status == 401 ? "auth_required" : "offline")
+            .apply();
+        mRouteOsUi.post(() -> mRouteOsEndingRide = false);
+      }
     }, "routeos-end-ride").start();
-  }
-
-  /**
-   * Best-effort arrival: when the engine reaches the destination, complete the server ride too.
-   * The backend still validates hub proximity, so a mismatch leaves the ride active for a
-   * manual end instead of stranding it.
-   */
-  private void arriveRouteOsRide()
-  {
-    long rideId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0);
-    if (rideId == 0) return;
-    new Thread(() -> {
-      long driverId = getSharedPreferences("routeos", MODE_PRIVATE).getLong("driver_id", 0);
-      try
-      {
-        postRouteOs(this, "/api/v1/rides/" + rideId + "/arrive",
-                    new JSONObject().put("driver_id", driverId));
-        clearRouteOsRidePrefs();
-      }
-      catch (Exception e) { Logger.w(TAG, "RouteOS ride arrival sync failed: " + e.getMessage()); }
-    }, "routeos-arrive-ride").start();
-  }
-
-  private void clearRouteOsRidePrefs()
-  {
-    getSharedPreferences("routeos", MODE_PRIVATE).edit().remove("active_ride_id").remove("active_route_id")
-        .remove("active_route_name").remove("active_destination_lat").remove("active_destination_lon").apply();
-  }
-
-  private static void postRouteOs(@NonNull Context context, @NonNull String path,
-                                  @NonNull JSONObject body) throws Exception
-  {
-    app.routeos.RouteOsApi.post(context, path, body);
   }
 }
