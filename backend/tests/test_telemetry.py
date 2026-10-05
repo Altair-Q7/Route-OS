@@ -1,3 +1,6 @@
+"""
+COVERAGE: live-ride location samples -- retries and out-of-order delivery keep the live marker correct.
+"""
 from datetime import datetime, timedelta, timezone
 from contextlib import closing
 

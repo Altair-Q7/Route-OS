@@ -1,3 +1,6 @@
+"""
+COVERAGE: GPS track point timestamp normalization and storage.
+"""
 import json
 from contextlib import closing
 from datetime import datetime

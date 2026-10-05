@@ -1,4 +1,7 @@
-"""Provision an existing RouteOS account without exposing passwords in shell history."""
+"""Set a password for an existing RouteOS account.
+
+The password is entered privately and existing sessions are revoked.
+"""
 import argparse
 import getpass
 from contextlib import closing
@@ -6,6 +9,7 @@ from app import connection, initialize_database, password_hash
 
 
 def main():
+    """Prompt for + confirm a new password, then update the named account."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("name", help="Existing driver/admin account name")
     args = parser.parse_args()

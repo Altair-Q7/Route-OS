@@ -1,3 +1,4 @@
+"""Backend API for RouteOS drivers, rides, and routes."""
 from __future__ import annotations
 
 import os
@@ -218,6 +219,25 @@ def initialize_database() -> None:
              )
             """
         )
+        user_columns = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
+        if "role" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'driver'")
+        if "auth_token" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN auth_token TEXT")
+        if "password_hash" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        db.execute("""CREATE TABLE IF NOT EXISTS sessions (
+            token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+            expires_at TEXT NOT NULL)""")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_auth_token ON users(auth_token)")
+        db.execute(
+            """
+            UPDATE rides SET status = 'ended', ended_at = started_at
+             WHERE status = 'active' AND id NOT IN (
+                 SELECT MAX(id) FROM rides WHERE status = 'active' GROUP BY driver_id
+             )
+            """
+        )
         db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_rides_active_driver ON rides(driver_id) WHERE status = 'active'"
         )
@@ -236,8 +256,6 @@ def initialize_database() -> None:
         for column in ("start_latitude", "start_longitude", "destination_latitude", "destination_longitude"):
             if column not in route_columns:
                 db.execute(f"ALTER TABLE routes ADD COLUMN {column} REAL")
-        # Create indexes only after all columns have been migrated. Older alpha
-        # databases do not have every column present in the current indexes.
         db.executescript(
             """
             CREATE INDEX IF NOT EXISTS idx_live_locations_ride_id_id ON live_locations(ride_id, id DESC);
@@ -284,8 +302,6 @@ def initialize_database() -> None:
         )
         for row in db.execute("SELECT id FROM users WHERE auth_token IS NULL").fetchall():
             db.execute("UPDATE users SET auth_token = ? WHERE id = ?", (new_token(), row["id"]))
-        # Keep the persistent demo database aligned when the demo account display
-        # names change between deployments.
         for old_name, new_name in (
             ("Disha Patani", "D.B Cooper"),
             ("Thomachan Valiparambil", "Sreekandan Nair"),
@@ -349,6 +365,7 @@ def initialize_database() -> None:
 
 
 class EventIn(BaseModel):
+    """Incoming event from client (admin only)"""
     kind: str = Field(min_length=1, max_length=80)
     payload: dict = Field(default_factory=dict)
 
@@ -369,6 +386,7 @@ class EventIn(BaseModel):
 
 
 class UserIn(BaseModel):
+    """New user registration request"""
     name: str = Field(min_length=1, max_length=120)
     password: str | None = Field(default=None, min_length=12, max_length=256)
 
@@ -382,11 +400,13 @@ class UserIn(BaseModel):
 
 
 class LoginIn(BaseModel):
+    """Login request - name + optional password"""
     name: str = Field(min_length=1, max_length=120)
     password: str | None = Field(default=None, max_length=256)
 
 
 class TrackPoint(BaseModel):
+    """Single GPS point in a track recording"""
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     timestamp: str | int | None = None
@@ -399,12 +419,14 @@ class TrackPoint(BaseModel):
 
 
 class TrackIn(BaseModel):
+    """Complete track recording upload"""
     recorder_id: int
     organic_maps_track_id: str | None = None
     points: list[TrackPoint] = Field(min_length=2, max_length=100_000)
 
 
 class RouteIn(BaseModel):
+    """Create a saved route from a recorded track"""
     name: str = Field(min_length=1, max_length=160)
     recorder_id: int
     track_id: int
@@ -430,6 +452,7 @@ class RouteIn(BaseModel):
 
 
 class RideIn(BaseModel):
+    """Start a new ride on a saved route"""
     driver_id: int
     route_id: int
     vehicle_type: str = Field(min_length=1, max_length=40)
@@ -445,6 +468,7 @@ class RideIn(BaseModel):
 
 
 class PlannedPoint(TrackPoint):
+    """A waypoint in a planned route (extends TrackPoint with routing metadata)"""
     sequence: int = Field(ge=0)
     type: str = Field(pattern="^(start|via|destination)$")
     label: str | None = Field(default=None, max_length=200)
@@ -452,6 +476,7 @@ class PlannedPoint(TrackPoint):
 
 
 class PlannedRouteIn(BaseModel):
+    """Save a planned route (drawn on map with Organic Maps routing)"""
     name: str = Field(min_length=1, max_length=160)
     points: list[PlannedPoint] = Field(min_length=2, max_length=102)
     distance_meters: float = Field(gt=0, allow_inf_nan=False)
@@ -469,6 +494,7 @@ class PlannedRouteIn(BaseModel):
 
 
 class LiveLocationIn(BaseModel):
+    """Single GPS update from driver during active ride"""
     driver_id: int
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
@@ -492,10 +518,12 @@ class LiveLocationIn(BaseModel):
 
 
 class RouteActorIn(BaseModel):
+    """Base model for route actions requiring a driver"""
     driver_id: int
 
 
 class RouteRenameIn(RouteActorIn):
+    """Rename a saved route"""
     name: str = Field(min_length=1, max_length=160)
 
     @field_validator("name")
@@ -508,14 +536,17 @@ class RouteRenameIn(RouteActorIn):
 
 
 class RouteShareIn(RouteActorIn):
+    """Share a route with another user (logs event)"""
     recipient_id: int | None = None
 
 
 class EndRideIn(BaseModel):
+    """Explicitly end a ride"""
     driver_id: int
 
 
 class ArriveIn(BaseModel):
+    """Mark ride as arrived at destination (auto-ends if near destination)"""
     driver_id: int
 
 
@@ -557,6 +588,7 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict:
+    """Simple health check - verifies database connectivity"""
     try:
         with closing(connection()) as db:
             db.execute("SELECT 1").fetchone()
@@ -567,6 +599,7 @@ def health() -> dict:
 
 @app.post("/api/v1/users", status_code=201)
 def create_user(user: UserIn) -> dict:
+    """Register a new driver account"""
     name = user.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="name must not be blank")
@@ -589,6 +622,11 @@ def create_user(user: UserIn) -> dict:
 
 @app.post("/api/v1/auth/login")
 def login(login: LoginIn) -> dict:
+    """Login with username and optional password.
+    Two modes:
+    1. Production: Password required, verified via PBKDF2 hash
+    2. Development (ROUTEOS_DEVELOPMENT_AUTH=1): Quick-login with auth_token only
+    """
     normalized_name = login.name.strip()
     with closing(connection()) as db:
         existing = db.execute(
@@ -620,6 +658,10 @@ def logout(
     authorization: str | None = Header(default=None),
     x_routeos_token: str | None = Header(default=None),
 ) -> dict:
+    """Logout - invalidate current session token.
+    In development mode, also rotates the user's auth_token so a copied
+    token cannot be reused (important for shared demo accounts).
+    """
     bearer = authorization[7:] if authorization and authorization.startswith("Bearer ") else None
     token = bearer or x_routeos_token
     if token:
@@ -638,6 +680,11 @@ def logout(
 
 @app.post("/api/v1/tracks", status_code=201)
 def create_track(track: TrackIn, me: dict = Depends(current_user)) -> dict:
+    """Save a raw GPS track recording from Organic Maps track recorder.
+    The mobile app records GPS points in background, then uploads them here.
+    Each point has: latitude, longitude, timestamp, altitude.
+    Max 100,000 points per track (enough for very long drives).
+    """
     caller_owns(me, track.recorder_id)
     created_at = utc_now()
     points = [point.model_dump() for point in track.points]
@@ -660,6 +707,11 @@ def create_track(track: TrackIn, me: dict = Depends(current_user)) -> dict:
 
 @app.post("/api/v1/routes", status_code=201)
 def create_route(route: RouteIn, me: dict = Depends(current_user)) -> dict:
+    """Create a saved route from a recorded track.
+    A route is a "rideable" version of a track - it has a name, origin/destination
+    labels, and pre-computed distance/duration. Drivers select routes to start rides.
+    Routes can be 'recorded' (from GPS) or 'drawn' (planned on map).
+    """
     caller_owns(me, route.recorder_id)
     created_at = utc_now()
     with closing(connection()) as db:
@@ -699,6 +751,12 @@ def create_route(route: RouteIn, me: dict = Depends(current_user)) -> dict:
 
 
 def route_stats(points: list[dict]) -> tuple[float, int]:
+    """Calculate total distance and duration from a list of GPS points.
+    Distance: Sum of Haversine distances between consecutive points (in meters)
+    Duration: Time between first and last timestamp, or estimated from distance
+              (assuming ~30 km/h average = 8.3 m/s if no timestamps)
+    Returns: (distance_meters, duration_seconds)
+    """
     distance = 0.0
     for first, second in zip(points, points[1:]):
         lat1, lon1 = math.radians(first["latitude"]), math.radians(first["longitude"])
@@ -719,6 +777,15 @@ def route_stats(points: list[dict]) -> tuple[float, int]:
 
 @app.get("/api/v1/routes")
 def list_routes(driver_id: int | None = None, me: dict = Depends(current_user)) -> list[dict]:
+    """List all saved routes (not soft-deleted).
+    Returns routes with:
+    - Basic info (name, type, distance, duration)
+    - Recorder name
+    - Favorite status for current user
+    - Last used timestamp for "Recent" sorting
+    Sorted by: recently used first, then by creation date (newest first).
+    Admin can optionally filter by driver_id.
+    """
     if driver_id is not None:
         caller_owns(me, driver_id)
     viewer_id = me["id"]
@@ -729,13 +796,13 @@ def list_routes(driver_id: int | None = None, me: dict = Depends(current_user)) 
                    r.hub_latitude, r.hub_longitude, r.distance_meters, r.duration_seconds, r.point_count,
                    r.start_latitude, r.start_longitude, r.destination_latitude, r.destination_longitude,
                    u.name AS recorder_name, f.route_id IS NOT NULL AS is_favorite, rec.last_used_at
-             FROM routes r JOIN users u ON u.id = r.recorder_id
-             LEFT JOIN route_favorites f ON f.route_id=r.id AND f.user_id=?
-             LEFT JOIN route_recents rec ON rec.route_id=r.id AND rec.user_id=?
-             WHERE r.deleted_at IS NULL
-             ORDER BY COALESCE(rec.last_used_at,r.created_at) DESC, r.id DESC
-             """
-            , (viewer_id, viewer_id)
+              FROM routes r JOIN users u ON u.id = r.recorder_id
+              LEFT JOIN route_favorites f ON f.route_id=r.id AND f.user_id=?
+              LEFT JOIN route_recents rec ON rec.route_id=r.id AND rec.user_id=?
+              WHERE r.deleted_at IS NULL
+              ORDER BY COALESCE(rec.last_used_at,r.created_at) DESC, r.id DESC
+              """
+             , (viewer_id, viewer_id)
         ).fetchall()
         result = []
         for row in rows:
@@ -747,6 +814,14 @@ def list_routes(driver_id: int | None = None, me: dict = Depends(current_user)) 
 
 @app.post("/api/v1/planned-routes", status_code=201)
 def save_planned_route(route: PlannedRouteIn, me: dict = Depends(current_user)) -> dict:
+    """Save a planned route drawn on the map (not a GPS recording).
+    The Flutter UI lets users tap to add waypoints (start, via, destination).
+    Organic Maps calculates the road route between them, returning:
+    - Full route geometry (polyline points)
+    - Total distance and estimated duration
+    This creates a 'drawn' type route (vs 'recorded' from GPS).
+    Stores waypoints separately so route can be re-calculated if needed.
+    """
     stamp = utc_now()
     points = [p.model_dump() for p in route.points]
     with closing(connection()) as db:
@@ -766,6 +841,10 @@ def save_planned_route(route: PlannedRouteIn, me: dict = Depends(current_user)) 
 
 @app.get("/api/v1/routes/{route_id}")
 def get_route(route_id: int, me: dict = Depends(current_user)) -> dict:
+    """Get full route details including geometry.
+    For 'drawn' routes: Returns waypoints (planned points) with saved distance/duration.
+    For 'recorded' routes: Returns full GPS track points with computed distance/duration.
+    """
     with closing(connection()) as db:
         row = db.execute(
             """
@@ -795,6 +874,10 @@ def get_route(route_id: int, me: dict = Depends(current_user)) -> dict:
 
 
 def route_actor(db: sqlite3.Connection, route_id: int, driver_id: int) -> tuple[sqlite3.Row, sqlite3.Row]:
+    """Helper: Verify route exists and get actor info for permission checks.
+    Returns (route_row, actor_row) where actor has id and role.
+    Raises 404 if route or driver not found.
+    """
     route = db.execute("SELECT * FROM routes WHERE id = ? AND deleted_at IS NULL", (route_id,)).fetchone()
     if route is None:
         raise HTTPException(status_code=404, detail="route not found")
@@ -806,6 +889,9 @@ def route_actor(db: sqlite3.Connection, route_id: int, driver_id: int) -> tuple[
 
 @app.patch("/api/v1/routes/{route_id}")
 def rename_route(route_id: int, rename: RouteRenameIn, me: dict = Depends(current_user)) -> dict:
+    """Rename a saved route.
+    Permission: Only route owner (recorder) or admin can rename.
+    """
     caller_owns(me, rename.driver_id)
     with closing(connection()) as db:
         route, actor = route_actor(db, route_id, rename.driver_id)
@@ -818,6 +904,12 @@ def rename_route(route_id: int, rename: RouteRenameIn, me: dict = Depends(curren
 
 @app.delete("/api/v1/routes/{route_id}")
 def delete_route(route_id: int, driver_id: int, me: dict = Depends(current_user)) -> dict:
+    """Soft-delete a route (marks as deleted, keeps for ride history).
+    Permission: Only route owner or admin can delete.
+    Constraint: Cannot delete if an active ride is using this route.
+    Soft delete preserves completed rides' audit trail. The route disappears
+    from lists/details and can no longer be edited, favorited, shared, or started.
+    """
     caller_owns(me, driver_id)
     with closing(connection()) as db:
         route, actor = route_actor(db, route_id, driver_id)
@@ -840,6 +932,7 @@ def delete_route(route_id: int, driver_id: int, me: dict = Depends(current_user)
 
 @app.post("/api/v1/routes/{route_id}/favorite")
 def favorite_route(route_id: int, actor: RouteActorIn, me: dict = Depends(current_user)) -> dict:
+    """Add route to user's favorites."""
     caller_owns(me, actor.driver_id)
     with closing(connection()) as db:
         route_actor(db, route_id, actor.driver_id)
@@ -851,6 +944,7 @@ def favorite_route(route_id: int, actor: RouteActorIn, me: dict = Depends(curren
 
 @app.delete("/api/v1/routes/{route_id}/favorite")
 def unfavorite_route(route_id: int, driver_id: int, me: dict = Depends(current_user)) -> dict:
+    """Remove route from user's favorites."""
     caller_owns(me, driver_id)
     with closing(connection()) as db:
         route_actor(db, route_id, driver_id)
@@ -861,6 +955,9 @@ def unfavorite_route(route_id: int, driver_id: int, me: dict = Depends(current_u
 
 @app.post("/api/v1/routes/{route_id}/recent")
 def mark_route_recent(route_id: int, actor: RouteActorIn, me: dict = Depends(current_user)) -> dict:
+    """Mark route as recently used (for 'Recent' section in UI).
+    Called when user views/selects a route. Upserts timestamp.
+    """
     caller_owns(me, actor.driver_id)
     with closing(connection()) as db:
         route_actor(db, route_id, actor.driver_id)
@@ -874,6 +971,7 @@ def mark_route_recent(route_id: int, actor: RouteActorIn, me: dict = Depends(cur
 
 @app.delete("/api/v1/routes/{route_id}/recent")
 def clear_route_recent(route_id: int, driver_id: int, me: dict = Depends(current_user)) -> dict:
+    """Remove route from user's recents."""
     caller_owns(me, driver_id)
     with closing(connection()) as db:
         route_actor(db, route_id, driver_id)
@@ -884,6 +982,10 @@ def clear_route_recent(route_id: int, driver_id: int, me: dict = Depends(current
 
 @app.post("/api/v1/routes/{route_id}/share")
 def share_route(route_id: int, share: RouteShareIn, me: dict = Depends(current_user)) -> dict:
+    """Log a route share event (for audit trail).
+    Permission: Only route owner or admin can share.
+    Creates an 'route_shared' event with recipient info.
+    """
     caller_owns(me, share.driver_id)
     with closing(connection()) as db:
         route, actor = route_actor(db, route_id, share.driver_id)
@@ -899,6 +1001,15 @@ def share_route(route_id: int, share: RouteShareIn, me: dict = Depends(current_u
 
 @app.post("/api/v1/rides", status_code=201)
 def start_ride(ride: RideIn, me: dict = Depends(current_user)) -> dict:
+    """Start a new ride on a saved route.
+    Validates:
+    - Caller is the driver (or admin)
+    - Driver has 'driver' role (not admin)
+    - Route exists and is not deleted
+    - Driver has no other active ride (enforced by unique index)
+    Records vehicle type/number for identification.
+    Automatically marks route as recently used.
+    """
     caller_owns(me, ride.driver_id)
     started_at = utc_now()
     with closing(connection()) as db:
@@ -936,6 +1047,16 @@ def start_ride(ride: RideIn, me: dict = Depends(current_user)) -> dict:
 
 @app.post("/api/v1/rides/{ride_id}/locations", status_code=201)
 def update_live_location(ride_id: int, location: LiveLocationIn, me: dict = Depends(current_user)) -> dict:
+    """Upload a live GPS location during an active ride.
+    Called by driver app every ~5 seconds while ride is active.
+    Uses INSERT OR IGNORE with sample_id for deduplication (handles retries).
+    Returns computed distances and arrival status for UI feedback.
+    Returns:
+    - Stored location data
+    - distance_to_hub_m: Distance to route's central hub point
+    - distance_to_destination_m: Distance to final destination
+    - arrived: True if within 150m of destination AND GPS < 2 min old
+    """
     caller_owns(me, location.driver_id)
     received_at = utc_now()
     recorded_at = location.recorded_at.isoformat() if location.recorded_at else received_at
@@ -991,6 +1112,13 @@ def update_live_location(ride_id: int, location: LiveLocationIn, me: dict = Depe
 
 
 def _finish_ride(db: sqlite3.Connection, ride_id: int, driver_id: int, outcome: str) -> dict:
+    """Internal helper to end a ride and log event.
+    Atomically:
+    1. Updates ride status to 'ended' with timestamp
+    2. Logs event (ride_ended or ride_arrived) for audit trail
+    3. Returns ride info
+    Uses rowcount to detect race conditions (ride already ended).
+    """
     ended_at = utc_now()
     updated = db.execute(
         "UPDATE rides SET status = 'ended', ended_at = ? WHERE id = ? AND status = 'active'",
@@ -1010,6 +1138,10 @@ def _finish_ride(db: sqlite3.Connection, ride_id: int, driver_id: int, outcome: 
 
 @app.post("/api/v1/rides/{ride_id}/end")
 def end_ride(ride_id: int, body: EndRideIn, me: dict = Depends(current_user)) -> dict:
+    """Explicitly end a ride (driver or admin).
+    Permission: Driver can end own ride; admin can end any ride.
+    Logs 'ride_ended' event.
+    """
     if me["role"] != "admin":
         caller_owns(me, body.driver_id)
     with closing(connection()) as db:
@@ -1023,6 +1155,16 @@ def end_ride(ride_id: int, body: EndRideIn, me: dict = Depends(current_user)) ->
 
 @app.post("/api/v1/rides/{ride_id}/arrive")
 def arrive_ride(ride_id: int, body: ArriveIn, me: dict = Depends(current_user)) -> dict:
+    """Mark ride as arrived at destination (auto-ends if validated).
+    Permission: Driver can arrive own ride; admin can arrive any ride.
+    Validation:
+    - Ride must be active
+    - Route must have destination coordinates
+    - Must have recent GPS location (< 2 min old)
+    - Must be within ARRIVAL_RADIUS_M (150m) of destination
+    If validated, ends ride and logs 'ride_arrived' event.
+    Returns arrival distance for UI feedback.
+    """
     if me["role"] != "admin":
         caller_owns(me, body.driver_id)
     with closing(connection()) as db:
@@ -1065,6 +1207,11 @@ def arrive_ride(ride_id: int, body: ArriveIn, me: dict = Depends(current_user)) 
 
 @app.get("/api/v1/rides/active")
 def active_rides(me: dict = Depends(current_user)) -> list[dict]:
+    """Get all active rides with latest location (admin only).
+    Returns ride info + driver name + route name + latest GPS location.
+    Adds 'location_stale' flag if last update > 30 seconds ago.
+    Used by admin map to show all active drivers in real-time.
+    """
     if me["role"] != "admin":
         raise HTTPException(status_code=403, detail="admin access required")
     with closing(connection()) as db:
@@ -1094,6 +1241,11 @@ def active_rides(me: dict = Depends(current_user)) -> list[dict]:
 
 @app.get("/api/v1/drivers/{driver_id}/active-ride")
 def driver_active_ride(driver_id: int, me: dict = Depends(current_user)) -> dict:
+    """Get a specific driver's active ride with full route geometry.
+    Permission: Driver can see own ride; admin can see any driver's ride.
+    Returns ride info + route name + destination coordinates from track points.
+    Used by driver app to restore ride state on app restart.
+    """
     if driver_id != me["id"] and me["role"] != "admin":
         raise HTTPException(status_code=403, detail="driver mismatch")
     with closing(connection()) as db:
@@ -1120,6 +1272,10 @@ def driver_active_ride(driver_id: int, me: dict = Depends(current_user)) -> dict
 
 @app.get("/api/v1/manifest")
 def manifest() -> dict:
+    """Service manifest - describes RouteOS capabilities for client apps.
+    Returns product info, map engine, and available features/endpoints.
+    Used by Flutter app on startup to configure UI.
+    """
     return {
         "product": "RouteOS",
         "map_engine": "Organic Maps",
@@ -1147,6 +1303,10 @@ def manifest() -> dict:
 
 @app.post("/api/v1/events", status_code=201)
 def create_event(event: EventIn, me: dict = Depends(current_user)) -> dict:
+    """Create a custom event (admin only).
+    Reserved event kinds (ride_ended, ride_arrived, route_shared) cannot be used.
+    Automatically adds actor_id to payload for audit trail.
+    """
     if me["role"] != "admin":
         raise HTTPException(status_code=403, detail="admin access required")
     if event.kind in {"ride_ended", "ride_arrived", "route_shared"}:
@@ -1164,6 +1324,10 @@ def create_event(event: EventIn, me: dict = Depends(current_user)) -> dict:
 
 @app.get("/api/v1/events")
 def list_events(limit: int = 50, me: dict = Depends(current_user)) -> list[dict]:
+    """List recent events (admin only).
+    Returns paginated audit log with parsed JSON payloads.
+    Max 200 events per request.
+    """
     if me["role"] != "admin":
         raise HTTPException(status_code=403, detail="admin access required")
     if not 1 <= limit <= 200:

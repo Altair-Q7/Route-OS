@@ -1,3 +1,6 @@
+"""
+COVERAGE: ride lifecycle -- start, live location updates, end and arrive transitions.
+"""
 from conftest import api, auth_headers
 
 

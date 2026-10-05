@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run the local RouteOS backend from any working directory."""
+"""Run the local backend from any folder.
+
+The launcher stops an older RouteOS server, selects the project environment,
+and can connect a USB Android device with ``--adb-reverse``.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +23,10 @@ VENV_PYTHON = BACKEND / ".venv" / "bin" / "python"
 
 
 def existing_backend_processes() -> list[int]:
-    """Find RouteOS Uvicorn processes without requiring an extra dependency."""
+    """Find RouteOS Uvicorn processes without requiring an extra dependency.
+    Scans /proc for a uvicorn command running the `app:app` module from this
+    repo's backend directory (no psutil needed).
+    """
     processes: list[int] = []
     proc_root = Path("/proc")
     for entry in proc_root.iterdir():
@@ -42,6 +49,7 @@ def existing_backend_processes() -> list[int]:
 
 
 def stop_existing_backends() -> None:
+    """SIGTERM stale backends, wait up to 5 s, then SIGKILL any survivors."""
     processes = existing_backend_processes()
     if not processes:
         return
@@ -68,6 +76,7 @@ def stop_existing_backends() -> None:
 
 
 def main() -> int:
+    """Parse flags, prepare the environment, and run uvicorn in the foreground."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)

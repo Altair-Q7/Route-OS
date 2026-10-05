@@ -1,3 +1,6 @@
+"""
+COVERAGE: health check, user registration and login happy paths.
+"""
 import sqlite3
 
 import app as routeos_app

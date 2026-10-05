@@ -1,3 +1,6 @@
+"""
+COVERAGE: legacy database schema migration and previously reported bugs, locked in as tests.
+"""
 import sqlite3
 from contextlib import closing
 

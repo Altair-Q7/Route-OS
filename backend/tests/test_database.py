@@ -1,3 +1,6 @@
+"""
+COVERAGE: SQLite schema constraints (foreign keys, cascades, NOT NULL) that the app relies on.
+"""
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone

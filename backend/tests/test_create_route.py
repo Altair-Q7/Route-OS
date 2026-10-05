@@ -1,3 +1,6 @@
+"""
+COVERAGE: creating tracks + shared routes end to end (recorded vs drawn route types).
+"""
 import json
 from contextlib import closing
 from datetime import datetime

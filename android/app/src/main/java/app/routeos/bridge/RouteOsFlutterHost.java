@@ -45,6 +45,7 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
   private boolean selectedPoint;
   private boolean arrivalSent;
   private long restoringRideId;
+  // Complete ride.start after the native route has finished building.
   private MethodChannel.Result pendingRideResult;
   private JSONObject pendingRideData;
   private long previewGeneration;

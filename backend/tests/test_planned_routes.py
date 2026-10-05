@@ -1,3 +1,6 @@
+"""
+COVERAGE: planned-route save/load round trip preserves point order, types, labels and routing stats.
+"""
 from conftest import api, auth_headers
 
 

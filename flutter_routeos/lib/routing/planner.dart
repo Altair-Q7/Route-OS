@@ -67,10 +67,10 @@ class Planner extends ChangeNotifier {
       : 'Via';
   void edit(List<RoutePoint> next) {
     updatedAt = DateTime.now().toUtc().toIso8601String();
-    _undo.add(List.of(_points));
+      _undo.add(List.of(_points));
     _redo.clear();
     _points = next;
-    id = null;
+      id = null;
     distance = 0;
     duration = 0;
     state = _points.isEmpty ? PlannerState.idle : PlannerState.drawing;
@@ -197,8 +197,6 @@ class Planner extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 2-opt ordering preview with fixed endpoints. Geographic ordering only; OM still computes
-  /// every road segment and is the sole authority for driving distance/time.
   List<RoutePoint> optimizedOrder() {
     final next = List.of(_points);
     double cost(RoutePoint a, RoutePoint b) {

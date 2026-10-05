@@ -1,3 +1,6 @@
+"""
+COVERAGE: production password sessions vs development quick-login, plus token revocation.
+"""
 from conftest import api
 from conftest import routeos_app
 from contextlib import closing

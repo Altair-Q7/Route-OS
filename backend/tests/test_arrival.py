@@ -1,3 +1,6 @@
+"""
+COVERAGE: /rides/arrive -- destination vs start semantics and the fresh-GPS-location requirement.
+"""
 from contextlib import closing
 
 import app as routeos_app

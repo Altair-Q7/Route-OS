@@ -1,3 +1,6 @@
+"""
+COVERAGE: custom event permissions -- admin only, reserved kinds rejected, payload size limits, actor spoofing blocked.
+"""
 import pytest
 
 import app as routeos_app
