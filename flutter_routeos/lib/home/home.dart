@@ -63,7 +63,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       }
       final draft = await Bridge.call('draft.load');
       if (!mounted) return;
-      if (draft is Map && draft['points'] is List) {
+      if (session['role'] != 'admin' && draft is Map && draft['points'] is List) {
         planner.restore(Map<String, dynamic>.from(draft));
         if (['home', 'routes', 'planner'].contains(draft['ui_page'])) {
           page = draft['ui_page'] as String;
@@ -629,6 +629,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
 
   Future<void> changePage(String next) async {
     if (!mounted || busy) return;
+    if (next == 'planner' && session['role'] == 'admin') {
+      message('Route drawing is available to drivers only.');
+      return;
+    }
     if (rideStarting) {
       message('Starting navigation — please wait.');
       return;
@@ -937,6 +941,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                         title: Text(p['label'].toString()),
                         subtitle: Text(p['address'].toString()),
                         onTap: () {
+                          if (session['role'] == 'admin') {
+                            command('center', p);
+                            Navigator.pop(ctx);
+                            return;
+                          }
                           if (navigation != null || busy || rideStarting) {
                             message('End navigation before editing a route.');
                             return;
@@ -983,18 +992,19 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                   '${route['route_type']} · ${km(route['distance_meters'])} · ${minutes(route['duration_seconds'])}',
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.play_arrow),
-                title: const Text('Start ride'),
-                subtitle: const Text(
-                  'Load route, choose a vehicle, and start navigation',
+              if (session['role'] != 'admin')
+                ListTile(
+                  leading: const Icon(Icons.play_arrow),
+                  title: const Text('Start ride'),
+                  subtitle: const Text(
+                    'Load route, choose a vehicle, and start navigation',
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    startSavedRoute(route);
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  startSavedRoute(route);
-                },
-              ),
-              if (route['route_type'] == 'drawn')
+              if (session['role'] != 'admin' && route['route_type'] == 'drawn')
                 ListTile(
                   leading: const Icon(Icons.map_outlined),
                   title: const Text('Open / edit drawn route'),

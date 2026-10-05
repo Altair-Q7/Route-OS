@@ -59,6 +59,18 @@ Provision passwords for existing seeded accounts before production startup:
 ROUTEOS_DEVELOPMENT_AUTH=0 .venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
+For a Render Web Service, use `backend` as the Root Directory, `pip install -r
+requirements.txt` as the Build Command, and the following Start Command:
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port $PORT
+```
+
+Set the Health Check Path to `/health`. Render must receive the service port from
+`$PORT`; binding only to `127.0.0.1` or hard-coding port `8000` causes deployment
+port detection to time out. The repository root also contains `render.yaml` with
+these settings for Blueprint-based deployment.
+
 The tool prompts securely and revokes earlier sessions. Put production behind
 HTTPS. Release Android builds require a configured HTTPS URL; debug builds allow
 ADB loopback only. Android uses Keystore AES-GCM rather than plaintext tokens.
