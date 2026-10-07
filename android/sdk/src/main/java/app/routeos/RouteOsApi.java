@@ -27,6 +27,9 @@ public final class RouteOsApi {
   }
   /** Default RouteOS deployment. A local debug server can still be selected in RouteOS settings. */
   public static final String DEFAULT_API = "https://route-os-backend.onrender.com";
+  private static final int CONNECT_TIMEOUT_MS = 10000;
+  // The free demo server can take about a minute to wake after inactivity.
+  private static final int STARTUP_READ_TIMEOUT_MS = 75000;
   private RouteOsApi() {}
 
   public static String baseUrl(@NonNull Context context) {
@@ -95,6 +98,18 @@ public final class RouteOsApi {
     return RouteOsCredentials.read(context);
   }
 
+  public static boolean hasSession(@NonNull Context context) {
+    String value = token(context);
+    return value != null && !value.isEmpty();
+  }
+
+  private static String requiredToken(@NonNull Context context) throws ApiException {
+    String value = token(context);
+    if (value == null || value.isEmpty())
+      throw new ApiException(401, "Sign in to RouteOS to reconnect your account.");
+    return value;
+  }
+
   public static JSONObject login(@NonNull Context context, @NonNull String name) throws Exception {
     return login(context, name, null);
   }
@@ -113,7 +128,9 @@ public final class RouteOsApi {
             .putString("driver_name", user.getString("name"))
             .putString("role", user.getString("role"));
     String freshToken = user.optString("auth_token", null);
-    if (freshToken != null && !freshToken.isEmpty()) RouteOsCredentials.store(context, freshToken);
+    if (freshToken == null || freshToken.isEmpty() || user.isNull("auth_token"))
+      throw new ApiException(401, "The server did not complete sign-in. Please try again.");
+    RouteOsCredentials.store(context, freshToken);
     editor.apply();
     if (prefs.getLong("active_ride_id", 0) > 0)
       RouteOsLocationUploader.get(context).start();
@@ -304,18 +321,16 @@ public final class RouteOsApi {
     }
   }
 
-  private static void attachToken(@NonNull Context context, HttpURLConnection connection) {
-    String authToken = token(context);
-    if (authToken != null && !authToken.isEmpty())
-      connection.setRequestProperty("Authorization", "Bearer " + authToken);
+  private static void attachToken(@NonNull Context context, HttpURLConnection connection) throws ApiException {
+    connection.setRequestProperty("Authorization", "Bearer " + requiredToken(context));
   }
 
   private static JSONArray getArray(@NonNull Context context, String path) throws Exception {
     HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl(context) + path).openConnection();
     try {
       connection.setInstanceFollowRedirects(false);
-      connection.setConnectTimeout(3000);
-      connection.setReadTimeout(5000);
+      connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+      connection.setReadTimeout(STARTUP_READ_TIMEOUT_MS);
       attachToken(context, connection);
       if (connection.getResponseCode() != 200) throw httpError(connection);
       return new JSONArray(readFully(connection.getInputStream()));
@@ -328,8 +343,8 @@ public final class RouteOsApi {
     HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl(context) + path).openConnection();
     try {
       connection.setInstanceFollowRedirects(false);
-      connection.setConnectTimeout(3000);
-      connection.setReadTimeout(5000);
+      connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+      connection.setReadTimeout(STARTUP_READ_TIMEOUT_MS);
       attachToken(context, connection);
       if (connection.getResponseCode() != 200) throw httpError(connection);
       return new JSONObject(readFully(connection.getInputStream()));
@@ -339,7 +354,8 @@ public final class RouteOsApi {
   }
 
   public static JSONObject post(@NonNull Context context, String path, JSONObject body) throws Exception {
-    return post(baseUrl(context), token(context), path, body);
+    boolean login = "/api/v1/auth/login".equals(path);
+    return post(baseUrl(context), login ? null : requiredToken(context), path, body);
   }
 
   static JSONObject postForDriver(Context context, String server, long driverId, String path, JSONObject body)
@@ -348,7 +364,7 @@ public final class RouteOsApi {
     if (!server.equals(baseUrl(context))
         || driverId != context.getSharedPreferences("routeos", 0).getLong("driver_id", 0))
       throw new IllegalStateException("RouteOS session changed");
-    return post(server, token(context), path, body);
+    return post(server, requiredToken(context), path, body);
   }
 
   private static JSONObject post(String server, String authToken, String path, JSONObject body) throws Exception
@@ -360,10 +376,9 @@ public final class RouteOsApi {
       connection.setRequestProperty("Content-Type", "application/json");
       if (authToken != null && !authToken.isEmpty())
         connection.setRequestProperty("Authorization", "Bearer " + authToken);
-      // A recorded ride uploads thousands of GPS points in one request, so uploads need a longer
-      // read timeout than the small GET requests above.
-      connection.setConnectTimeout(3000);
-      connection.setReadTimeout(15000);
+      // Login may wake the demo server. Other writes keep a bounded timeout and are never replayed here.
+      connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+      connection.setReadTimeout("/api/v1/auth/login".equals(path) ? STARTUP_READ_TIMEOUT_MS : 15000);
       connection.setDoOutput(true);
       byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
       try (OutputStream output = connection.getOutputStream()) { output.write(data); }
@@ -384,8 +399,8 @@ public final class RouteOsApi {
     try {
       connection.setInstanceFollowRedirects(false);
       connection.setRequestMethod("DELETE");
-      connection.setConnectTimeout(3000);
-      connection.setReadTimeout(5000);
+      connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+      connection.setReadTimeout(STARTUP_READ_TIMEOUT_MS);
       attachToken(context, connection);
       if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300)
         throw httpError(connection);
@@ -402,8 +417,8 @@ public final class RouteOsApi {
       connection.setRequestMethod(method);
       connection.setRequestProperty("Content-Type", "application/json");
       attachToken(context, connection);
-      connection.setConnectTimeout(3000);
-      connection.setReadTimeout(5000);
+      connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+      connection.setReadTimeout(STARTUP_READ_TIMEOUT_MS);
       connection.setDoOutput(true);
       try (OutputStream output = connection.getOutputStream()) { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
       if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300)

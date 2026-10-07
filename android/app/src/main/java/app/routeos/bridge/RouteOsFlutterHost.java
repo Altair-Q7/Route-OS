@@ -243,10 +243,19 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
     if (closed) { result.error("CLOSED", "Screen closed", null); return; }
     try { io.execute(() -> {
       try { Object value = plain(task.call()); activity.runOnUiThread(() -> { if (!closed) result.success(value); }); }
-      catch (Exception error) { activity.runOnUiThread(() -> { if (!closed) result.error(error instanceof RouteOsApi.ApiException api && api.status==401?"AUTH_EXPIRED":"REQUEST_FAILED", error.getMessage(), null); }); }
+      catch (Exception error) { activity.runOnUiThread(() -> { if (!closed) result.error(error instanceof RouteOsApi.ApiException api && api.status==401?"AUTH_EXPIRED":"REQUEST_FAILED", requestErrorMessage(error), null); }); }
     }); } catch (RejectedExecutionException stopped) {
       result.error("CLOSED", "Screen closed", null);
     }
+  }
+
+  private static String requestErrorMessage(Exception error) {
+    if (error instanceof java.net.SocketTimeoutException)
+      return "The RouteOS server is taking too long to respond. Check your connection and try again.";
+    if (error instanceof RouteOsApi.ApiException api && api.status == 401
+        && ("missing API token".equals(error.getMessage()) || "invalid API token".equals(error.getMessage())))
+      return "Your RouteOS session has expired. Sign in again to reconnect.";
+    return error.getMessage();
   }
 
   private void loadRoutes(MethodChannel.Result result) {
@@ -263,7 +272,7 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
       } catch (Exception error) {
         activity.runOnUiThread(() -> { if (!closed) result.error(
             error instanceof RouteOsApi.ApiException api && api.status == 401 ? "AUTH_EXPIRED" : "REQUEST_FAILED",
-            error.getMessage(), null); });
+            requestErrorMessage(error), null); });
       }
     }); } catch (RejectedExecutionException stopped) {
       result.error("CLOSED", "Screen closed", null);
@@ -282,7 +291,7 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
           var prefs = activity.getSharedPreferences("routeos", Context.MODE_PRIVATE);
           result.success(java.util.Map.of(
               "id", prefs.getLong("driver_id", 0), "name", prefs.getString("driver_name", ""), "role",
-              prefs.getString("role", "driver"), "development",
+              prefs.getString("role", "driver"), "authenticated", RouteOsApi.hasSession(activity), "development",
               (activity.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0,
               "active_ride_id", prefs.getLong("active_ride_id", 0), "recording",
               app.organicmaps.sdk.location.TrackRecorder.nativeIsTrackRecordingEnabled(), "tracking_stale_label",

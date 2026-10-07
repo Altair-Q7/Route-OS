@@ -219,25 +219,6 @@ def initialize_database() -> None:
              )
             """
         )
-        user_columns = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
-        if "role" not in user_columns:
-            db.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'driver'")
-        if "auth_token" not in user_columns:
-            db.execute("ALTER TABLE users ADD COLUMN auth_token TEXT")
-        if "password_hash" not in user_columns:
-            db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-        db.execute("""CREATE TABLE IF NOT EXISTS sessions (
-            token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
-            expires_at TEXT NOT NULL)""")
-        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_auth_token ON users(auth_token)")
-        db.execute(
-            """
-            UPDATE rides SET status = 'ended', ended_at = started_at
-             WHERE status = 'active' AND id NOT IN (
-                 SELECT MAX(id) FROM rides WHERE status = 'active' GROUP BY driver_id
-             )
-            """
-        )
         db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_rides_active_driver ON rides(driver_id) WHERE status = 'active'"
         )
@@ -263,6 +244,7 @@ def initialize_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_events_id_desc ON events(id DESC);
             CREATE INDEX IF NOT EXISTS idx_routes_deleted_created ON routes(deleted_at, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_rides_status_driver ON rides(status, driver_id);
             CREATE INDEX IF NOT EXISTS idx_routes_recorder_id ON routes(recorder_id);
             CREATE INDEX IF NOT EXISTS idx_recorded_tracks_recorder_id ON recorded_tracks(recorder_id);
@@ -331,17 +313,24 @@ def initialize_database() -> None:
                 )
         configured_demo_password = demo_password()
         if configured_demo_password is not None:
-            encoded_password = password_hash(configured_demo_password)
             for name in ("D.B Cooper", "Sukumara Kurup", "Sreekandan Nair"):
                 user = db.execute(
-                    "SELECT id FROM users WHERE lower(name) = lower(?)", (name,)
+                    "SELECT id, password_hash FROM users WHERE lower(name) = lower(?)", (name,)
                 ).fetchone()
                 if user is not None:
+                    # A routine server restart must not sign everyone out.
+                    existing_hash = user["password_hash"]
+                    if existing_hash and hmac.compare_digest(
+                        existing_hash,
+                        password_hash(configured_demo_password, existing_hash.split(":")[0]),
+                    ):
+                        continue
                     db.execute(
                         "UPDATE users SET password_hash=? WHERE id=?",
-                        (encoded_password, user["id"]),
+                        (password_hash(configured_demo_password), user["id"]),
                     )
                     db.execute("DELETE FROM sessions WHERE user_id=?", (user["id"],))
+        db.execute("DELETE FROM sessions WHERE expires_at <= ?", (utc_now(),))
         for row in db.execute("""SELECT r.id,t.points FROM routes r JOIN recorded_tracks t ON t.id=r.track_id
             WHERE r.point_count IS NULL OR r.distance_meters IS NULL""").fetchall():
             try:
@@ -1241,21 +1230,17 @@ def active_rides(me: dict = Depends(current_user)) -> list[dict]:
 
 @app.get("/api/v1/drivers/{driver_id}/active-ride")
 def driver_active_ride(driver_id: int, me: dict = Depends(current_user)) -> dict:
-    """Get a specific driver's active ride with full route geometry.
-    Permission: Driver can see own ride; admin can see any driver's ride.
-    Returns ride info + route name + destination coordinates from track points.
-    Used by driver app to restore ride state on app restart.
-    """
+    """Restore an active ride using its saved destination, without loading the GPS track."""
     if driver_id != me["id"] and me["role"] != "admin":
         raise HTTPException(status_code=403, detail="driver mismatch")
     with closing(connection()) as db:
         row = db.execute(
             """
             SELECT rides.id, rides.driver_id, rides.route_id, rides.vehicle_type, rides.vehicle_number,
-                   rides.status, rides.started_at, routes.name AS route_name, tracks.points
+                   rides.status, rides.started_at, routes.name AS route_name,
+                   routes.destination_latitude, routes.destination_longitude
             FROM rides
             JOIN routes ON routes.id = rides.route_id
-            JOIN recorded_tracks tracks ON tracks.id = routes.track_id
             WHERE rides.driver_id = ? AND rides.status = 'active'
             ORDER BY rides.id DESC LIMIT 1
             """,
@@ -1263,11 +1248,7 @@ def driver_active_ride(driver_id: int, me: dict = Depends(current_user)) -> dict
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="no active ride")
-    ride = dict(row)
-    points = json.loads(ride.pop("points")) if ride["points"] else []
-    ride["destination_latitude"] = points[-1]["latitude"] if points else None
-    ride["destination_longitude"] = points[-1]["longitude"] if points else None
-    return ride
+    return dict(row)
 
 
 @app.get("/api/v1/manifest")

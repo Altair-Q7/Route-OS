@@ -17,7 +17,7 @@ The API is available at `http://127.0.0.1:8000`.
 
 The MVP API provides:
 
-- `GET /health` — liveness probe; the Android client checks it before login.
+- `GET /health` — checks that the backend can open its database.
 - `POST /api/v1/users` — create a driver account.
 - `POST /api/v1/auth/login` — password login, or seeded quick-login in explicitly enabled development mode.
 - `POST /api/v1/auth/logout` — revoke the current bearer session.
@@ -87,10 +87,33 @@ Startup preserves provisioned passwords and existing sessions. Seeded accounts
 have no production password until explicitly provisioned.
 
 On Render plans without Shell access, set the secret environment variable
-`ROUTEOS_DEMO_PASSWORD` to a password of 12–256 characters. On startup, the
-backend provisions that password for all three seeded demo accounts and revokes
+`ROUTEOS_DEMO_PASSWORD` to a password of 12–256 characters. When that password changes, the
+backend provisions it for all three seeded demo accounts and revokes
 their previous sessions. Keep `ROUTEOS_DEVELOPMENT_AUTH=0`; this preserves normal
 password authentication without exposing passwordless login.
+
+## Render reliability and saved data
+
+Render Free sleeps after 15 minutes without requests and can take about a minute
+to wake up. RouteOS allows up to 75 seconds for login and reads; a slow response
+keeps the map and app screen open. A missing or expired login offers Sign in.
+Restarting a server with the same demo password now preserves existing sessions.
+
+The default SQLite file is **not durable on Render Free**. Restarting, redeploying,
+or sleeping can erase newly saved routes, rides, and login sessions. Client fixes
+cannot prevent that data loss. See https://render.com/docs/free.
+
+For a reliable deployment with the current backend:
+
+1. Select an always-on Render web service and attach a persistent disk at
+   `/var/data` (this is a paid hosting change).
+2. Set `ROUTEOS_DATABASE=/var/data/routeos.db` and keep one Uvicorn worker.
+3. Back up and copy any existing database to that disk before switching paths.
+   Export routes before redeploying a Free service; do not assume its data survives.
+4. Keep `ROUTEOS_DEMO_PASSWORD` unchanged unless deliberately resetting passwords.
+
+If you need to keep free web hosting, a separate durable database and a backend
+migration are required. This backend currently uses SQLite, not PostgreSQL.
 
 Android navigation persists up to 1,000 GPS samples in an account/server-scoped
 SQLite outbox and retries network/server failures with backoff. Samples include

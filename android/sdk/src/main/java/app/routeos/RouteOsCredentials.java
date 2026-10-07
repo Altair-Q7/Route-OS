@@ -46,5 +46,8 @@ public final class RouteOsCredentials {
       return new String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), StandardCharsets.UTF_8);
     } catch (Exception unavailable) { clear(context); return null; }
   }
-  public static void clear(Context context) { context.getSharedPreferences("routeos_credentials", 0).edit().clear().apply(); }
+  public static synchronized void clear(Context context) {
+    context.getSharedPreferences("routeos_credentials", 0).edit().clear().apply();
+    context.getSharedPreferences("routeos", 0).edit().remove("auth_token").apply();
+  }
 }

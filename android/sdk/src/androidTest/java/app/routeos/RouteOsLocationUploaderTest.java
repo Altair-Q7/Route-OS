@@ -33,6 +33,7 @@ public class RouteOsLocationUploaderTest
     mServer = new ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"));
     String server = "http://127.0.0.1:" + mServer.getLocalPort();
     RouteOsApi.setBaseUrl(mContext, server);
+    RouteOsCredentials.store(mContext, "test-session");
     prefs.edit().putLong("driver_id", 987).putLong("active_ride_id", 765).apply();
     mServerThread = new Thread(() -> {
       try
@@ -102,6 +103,7 @@ public class RouteOsLocationUploaderTest
       store.discardRide(RouteOsApi.baseUrl(mContext), 987, 765);
     }
     mContext.getSharedPreferences("routeos", 0).edit().clear().apply();
+    RouteOsCredentials.clear(mContext);
   }
 
   @Test
@@ -152,6 +154,7 @@ public class RouteOsLocationUploaderTest
     awaitState("auth_required");
     assertEquals(1, mContext.getSharedPreferences("routeos", 0).getInt("tracking_pending", -1));
     assertEquals(765, mContext.getSharedPreferences("routeos", 0).getLong("active_ride_id", 0));
+    RouteOsCredentials.store(mContext, "renewed-test-session");
     mUploader.start();
     awaitState("live");
     assertEquals(2, mRequests.size());

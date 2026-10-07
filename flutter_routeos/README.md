@@ -69,3 +69,13 @@ Activity recreation retains the Flutter entry independently of the consumed laun
 The locally persisted planner also retains its page and editing history; it recalculates
 through Organic Maps when the planner is restored. Existing Organic Maps configuration-change
 handling remains unchanged, rather than avoiding recreation with additional manifest flags.
+
+RouteOS home and admin entry points use the same Flutter shell. Recreation also
+restores entries from the older native RouteOS screens, rather than leaving only
+the Organic Maps screen visible. An absent token opens sign-in recovery without
+calling protected backend endpoints or clearing a locally active ride.
+
+Validation uses Flutter 3.44.2 / Dart 3.12.2. The checked-in dependency lock reflects
+that SDK. Login and reads allow the demo backend up to 75 seconds to wake; duplicate
+route refreshes are skipped while one is already running. Mutating POST requests
+are not automatically replayed because they may already have succeeded remotely.

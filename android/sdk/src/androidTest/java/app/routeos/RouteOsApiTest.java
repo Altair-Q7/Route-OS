@@ -13,6 +13,23 @@ public class RouteOsApiTest
 {
   private final Context mContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
 
+  @Test
+  public void missingSessionFailsLocallyWithoutContactingServer() throws Exception
+  {
+    RouteOsCredentials.clear(mContext);
+    var error = assertThrows(RouteOsApi.ApiException.class, () -> RouteOsApi.getRoutes(mContext));
+    assertEquals(401, error.status);
+    assertEquals(false, RouteOsApi.hasSession(mContext));
+  }
+
+  @Test
+  public void clearingCredentialsAlsoRemovesLegacyToken()
+  {
+    mContext.getSharedPreferences("routeos", 0).edit().putString("auth_token", "legacy").apply();
+    RouteOsCredentials.clear(mContext);
+    assertNull(RouteOsCredentials.read(mContext));
+  }
+
   @After
   public void tearDown()
   {

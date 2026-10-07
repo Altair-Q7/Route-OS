@@ -33,6 +33,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   bool busy = false;
   bool rideStarting = false;
   bool authRequired = false;
+  bool refreshing = false;
+  bool signingIn = false;
   int? moving, inserting;
   Timer? calculationTimeout;
   Completer<bool>? calculationWaiter;
@@ -61,17 +63,23 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         navigation = {'maneuver': 'Ride active — waiting for GPS'};
         notifyNavigation();
       }
+      if ((session['id'] as num? ?? 0) > 0 &&
+          session['authenticated'] == false) {
+        setState(() => authRequired = true);
+      }
       final draft = await Bridge.call('draft.load');
       if (!mounted) return;
-      if (session['role'] != 'admin' && draft is Map && draft['points'] is List) {
+      if (session['role'] != 'admin' &&
+          draft is Map &&
+          draft['points'] is List) {
         planner.restore(Map<String, dynamic>.from(draft));
         if (['home', 'routes', 'planner'].contains(draft['ui_page'])) {
           page = draft['ui_page'] as String;
         }
       }
-      if ((session['id'] as num? ?? 0) > 0) {
+      if ((session['id'] as num? ?? 0) > 0 && !authRequired) {
         await refresh();
-        if (!mounted) return;
+        if (!mounted || authRequired) return;
         if (session['role'] == 'driver') {
           final ride = await request('ride.restore');
           if (!mounted) return;
@@ -148,6 +156,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted && e is PlatformException && e.code == 'AUTH_EXPIRED') {
         setState(() => authRequired = true);
+        adminTimer?.cancel();
       }
       message(e is PlatformException ? e.message ?? e.code : e.toString());
       rethrow;
@@ -165,6 +174,13 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   }
 
   Future<void> refresh() async {
+    if (!mounted ||
+        refreshing ||
+        authRequired ||
+        (session['id'] as num? ?? 0) == 0) {
+      return;
+    }
+    refreshing = true;
     final account = session['id'];
     try {
       final value = await request('routes');
@@ -175,7 +191,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               .toList(),
         );
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      refreshing = false;
+    }
     if (mounted &&
         session['role'] == 'admin' &&
         !adminLoading &&
@@ -695,13 +714,13 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   }
 
   Future<void> login([String? selected]) async {
-    if (!mounted) return;
+    if (!mounted || signingIn) return;
     final name = TextEditingController(
       text:
           selected ?? (authRequired ? session['name']?.toString() : null) ?? '',
     );
     final password = TextEditingController();
-    final submitted = await showDialog<bool>(
+    final dialog = DialogRoute<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Sign in to RouteOS'),
@@ -732,7 +751,17 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         ],
       ),
     );
-    if (!mounted || submitted != true) return;
+    final submitted = await Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push(dialog);
+    if (!mounted || submitted != true) {
+      await dialog.completed;
+      name.dispose();
+      password.dispose();
+      return;
+    }
+    setState(() => signingIn = true);
     try {
       final user = await request('login', {
         'name': name.text.trim(),
@@ -741,10 +770,17 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         authRequired = false;
+        error = null;
         session = {...session, ...Map<String, dynamic>.from(user as Map)};
       });
       await restore();
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      await dialog.completed;
+      name.dispose();
+      password.dispose();
+      if (mounted) setState(() => signingIn = false);
+    }
   }
 
   Future<void> server() async {
@@ -1213,12 +1249,25 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                   ],
                 ),
               ),
-              if (authRequired)
+              if (signingIn)
+                const ListTile(
+                  leading: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(),
+                  ),
+                  title: Text(
+                    'Signing in… the server may take a minute to wake up.',
+                  ),
+                ),
+              if (authRequired && !signingIn)
                 ListTile(
                   dense: true,
                   title: Text(
-                    tracking['message']?.toString() ??
-                        'Session expired. Sign in to resume syncing.',
+                    tracking['state'] == 'auth_required'
+                        ? tracking['message']?.toString() ??
+                              'Sign in to resume syncing.'
+                        : 'Session expired. Sign in to resume syncing.',
                   ),
                   trailing: TextButton(
                     onPressed: login,

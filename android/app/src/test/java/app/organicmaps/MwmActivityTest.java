@@ -12,6 +12,25 @@ import org.junit.Test;
 public class MwmActivityTest
 {
   @Test
+  public void consumedLaunchRestoresRouteOsInsteadOfLeavingABareMap()
+  {
+    final Intent intent = mock(Intent.class);
+    when(intent.getBooleanExtra(MwmActivity.EXTRA_CONSUMED, false)).thenReturn(true);
+    assertTrue(MwmActivity.shouldRestoreRouteOs(null, intent));
+    when(intent.getBooleanExtra("routeos_native", false)).thenReturn(true);
+    assertFalse(MwmActivity.shouldRestoreRouteOs(null, intent));
+  }
+
+  @Test
+  public void nativeRouteOsScreenRestoresAfterRecreation()
+  {
+    final Bundle state = mock(Bundle.class);
+    when(state.getBoolean("routeos_ui_visible", false)).thenReturn(true);
+    assertTrue(MwmActivity.shouldRestoreRouteOs(state, mock(Intent.class)));
+    assertFalse(MwmActivity.shouldRestoreRouteOs(null, mock(Intent.class)));
+  }
+
+  @Test
   public void unmarkedOrMissingIntentIsNotConsumed()
   {
     assertFalse(MwmActivity.isIntentConsumed(null, null));

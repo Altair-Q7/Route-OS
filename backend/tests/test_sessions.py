@@ -52,3 +52,22 @@ def test_render_demo_password_provisions_seeded_accounts_on_startup(monkeypatch)
             json={"name": "Sreekandan Nair", "password": "Demo123Route"},
         )
         assert response.status_code == 200
+
+
+def test_demo_session_survives_restart_but_password_change_revokes_it(monkeypatch, tmp_path):
+    monkeypatch.setattr(routeos_app, "DATABASE_PATH", tmp_path / "restart.db")
+    monkeypatch.setenv("ROUTEOS_DEVELOPMENT_AUTH", "0")
+    monkeypatch.setenv("ROUTEOS_DEMO_PASSWORD", "Demo123Route")
+    with api() as client:
+        session = client.post(
+            "/api/v1/auth/login", json={"name": "Sreekandan Nair", "password": "Demo123Route"}
+        ).json()
+    headers = {"Authorization": "Bearer " + session["auth_token"]}
+    with api() as client:
+        assert client.get("/api/v1/routes", headers=headers).status_code == 200
+    monkeypatch.setenv("ROUTEOS_DEMO_PASSWORD", "ChangedDemo123")
+    with api() as client:
+        assert client.get("/api/v1/routes", headers=headers).status_code == 401
+        assert client.post(
+            "/api/v1/auth/login", json={"name": "Sreekandan Nair", "password": "ChangedDemo123"}
+        ).status_code == 200

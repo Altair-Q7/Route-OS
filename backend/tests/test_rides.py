@@ -67,6 +67,20 @@ def test_double_start_returns_409():
         assert second.status_code == 409, second.text
 
 
+def test_active_ride_restoration_returns_the_saved_destination():
+    with api() as client:
+        user, headers = _driver(client, "Restore Destination Driver")
+        route = _route(client, user, headers)
+        ride = _start(client, user, headers, route["id"]).json()
+        response = client.get(f"/api/v1/drivers/{user['id']}/active-ride", headers=headers)
+        assert response.status_code == 200
+        restored = response.json()
+        assert restored["id"] == ride["id"]
+        assert restored["route_id"] == route["id"]
+        assert restored["destination_latitude"] == POINTS[-1]["latitude"]
+        assert restored["destination_longitude"] == POINTS[-1]["longitude"]
+
+
 def test_end_is_idempotent_and_keeps_first_ended_at():
     with api() as client:
         user, headers = _driver(client, "Idempotent Driver")

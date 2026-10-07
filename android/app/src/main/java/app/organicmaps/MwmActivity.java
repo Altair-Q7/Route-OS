@@ -264,6 +264,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
   private RouteOsNavigationOverlay mRouteOsNavigation;
   private app.routeos.bridge.RouteOsFlutterHost mRouteOsFlutter;
   private static final String STATE_ROUTEOS_FLUTTER = "routeos_flutter_visible";
+  private static final String STATE_ROUTEOS_UI = "routeos_ui_visible";
   private boolean mRestoreRouteOsFlutter;
 
   private void showRouteOsFlutter()
@@ -418,9 +419,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
     if (intent.getBooleanExtra("routeos_home", false))
     {
-      setOrganicChromeVisible(false);
-      RoutingController.get().cancel();
-      showRouteOsHomeOverlay();
+      showRouteOsFlutter();
+      startRouteOsLocation();
       return;
     }
 
@@ -450,9 +450,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
     if (intent.getBooleanExtra("routeos_admin", false))
     {
-      setOrganicChromeVisible(false);
-      RoutingController.get().cancel();
-      showRouteOsAdminOverlay();
+      showRouteOsFlutter();
+      startRouteOsLocation();
       return;
     }
 
@@ -1171,7 +1170,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
     if (savedInstanceState != null)
     {
       intent.putExtra(EXTRA_CONSUMED, savedInstanceState.getBoolean(EXTRA_CONSUMED, false));
-      if (savedInstanceState.getBoolean(STATE_ROUTEOS_FLUTTER, false))
+      if (savedInstanceState.getBoolean(STATE_ROUTEOS_FLUTTER, false)
+          || savedInstanceState.getBoolean(STATE_ROUTEOS_UI, false))
         intent.putExtra("routeos_flutter", true);
     }
   }
@@ -1190,6 +1190,18 @@ public class MwmActivity extends BaseMwmFragmentActivity
     return intent != null && intent.getBooleanExtra(EXTRA_CONSUMED, false);
   }
 
+  @VisibleForTesting
+  static boolean shouldRestoreRouteOs(@Nullable Bundle savedInstanceState, @Nullable Intent intent)
+  {
+    if (intent != null && intent.getBooleanExtra("routeos_native", false))
+      return false;
+    // A consumed launch intent will not recreate any UI in processIntent().
+    // Restore the RouteOS shell even for state saved by older native screens.
+    return isIntentConsumed(savedInstanceState, intent)
+        || (savedInstanceState != null && (savedInstanceState.getBoolean(STATE_ROUTEOS_FLUTTER, false)
+                                         || savedInstanceState.getBoolean(STATE_ROUTEOS_UI, false)));
+  }
+
   @SuppressLint("InlinedApi")
   @CallSuper
   @Override
@@ -1198,8 +1210,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
     super.onSafeCreate(savedInstanceState);
 
     mIntentConsumed = isIntentConsumed(savedInstanceState, getIntent());
-    mRestoreRouteOsFlutter = savedInstanceState != null
-        && savedInstanceState.getBoolean(STATE_ROUTEOS_FLUTTER, false);
+    mRestoreRouteOsFlutter = shouldRestoreRouteOs(savedInstanceState, getIntent());
 
     setContentView(R.layout.activity_map);
     makeNavigationBarTransparentInLightMode();
@@ -1587,6 +1598,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
     outState.putBoolean(POWER_SAVE_DISCLAIMER_SHOWN, mPowerSaveDisclaimerShown);
     outState.putBoolean(EXTRA_CONSUMED, mIntentConsumed);
     outState.putBoolean(STATE_ROUTEOS_FLUTTER, mRouteOsFlutter != null);
+    outState.putBoolean(STATE_ROUTEOS_UI, mRouteOsUiActive);
     super.onSaveInstanceState(outState);
   }
 

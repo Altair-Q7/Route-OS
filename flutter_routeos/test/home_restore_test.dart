@@ -196,4 +196,92 @@ void main() {
     expect(find.text('Alice'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'missing saved token offers sign in without sending protected requests',
+    (tester) async {
+      final commands = <String>[];
+      messenger.setMockMethodCallHandler(Bridge.methods, (call) async {
+        commands.add(call.method);
+        return switch (call.method) {
+          'session' => {
+            'id': 1,
+            'role': 'driver',
+            'name': 'Alice',
+            'authenticated': false,
+            'active_ride_id': 12,
+          },
+          'draft.load' => {},
+          _ => null,
+        };
+      });
+      await showHome(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('Sign in'), findsOneWidget);
+      expect(find.text('End ride'), findsOneWidget);
+      expect(commands, isNot(contains('routes')));
+      expect(commands, isNot(contains('ride.restore')));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'cancelling sign-in disposes its fields after the dialog transition',
+    (tester) async {
+      messenger.setMockMethodCallHandler(
+        Bridge.methods,
+        (call) async => switch (call.method) {
+          'session' => {
+            'id': 1,
+            'role': 'driver',
+            'name': 'Alice',
+            'authenticated': false,
+          },
+          'draft.load' => {},
+          _ => null,
+        },
+      );
+      await showHome(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign in'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Sign in to RouteOS'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('resuming while routes load does not queue a second refresh', (
+    tester,
+  ) async {
+    final routes = Completer<dynamic>();
+    var requests = 0;
+    messenger.setMockMethodCallHandler(Bridge.methods, (call) async {
+      if (call.method == 'routes') {
+        requests++;
+        return routes.future;
+      }
+      return switch (call.method) {
+        'session' => {
+          'id': 1,
+          'role': 'driver',
+          'name': 'Alice',
+          'authenticated': true,
+        },
+        'draft.load' => {},
+        _ => null,
+      };
+    });
+    await showHome(tester);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(requests, 1);
+    routes.complete([]);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

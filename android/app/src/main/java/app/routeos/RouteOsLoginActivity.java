@@ -77,11 +77,7 @@ public final class RouteOsLoginActivity extends Activity {
       try {
         JSONObject user = RouteOsApi.login(this, name, password.isEmpty() ? null : password);
         runOnUiThread(() -> {
-          Intent intent;
-          if ("admin".equals(user.optString("role")))
-            intent = new Intent(this, MwmActivity.class).putExtra("routeos_admin", true).putExtra("routeos_skip_home", true);
-          else
-            intent = new Intent(this, MwmActivity.class).putExtra("routeos_home", true);
+          Intent intent = new Intent(this, MwmActivity.class).putExtra("routeos_flutter", true);
           startActivity(intent); finish();
         });
       } catch (Exception error) {
