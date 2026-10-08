@@ -8,6 +8,8 @@ import sqlite3
 import math
 import hashlib
 import hmac
+import logging
+import time
 from contextlib import asynccontextmanager, closing
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -29,8 +31,10 @@ def demo_password() -> str | None:
     value = os.getenv("ROUTEOS_DEMO_PASSWORD")
     if value is None or not value.strip():
         return None
-    if len(value) < 12 or len(value) > 256:
-        raise RuntimeError("ROUTEOS_DEMO_PASSWORD must contain 12–256 characters")
+    # This explicit demo setting supports the requested Demo123 password.
+    # Normal account creation and password provisioning still require 12 characters.
+    if len(value) < 7 or len(value) > 256:
+        raise RuntimeError("ROUTEOS_DEMO_PASSWORD must contain 7–256 characters")
     return value
 
 
@@ -561,7 +565,11 @@ def caller_owns(me: dict, driver_id: int) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger = logging.getLogger("uvicorn.error")
+    started = time.monotonic()
+    logger.info("RouteOS: initializing database and demo accounts")
     initialize_database()
+    logger.info("RouteOS: database ready in %.2fs", time.monotonic() - started)
     yield
 
 

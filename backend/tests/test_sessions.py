@@ -43,13 +43,14 @@ def test_secure_password_provisioning_for_an_existing_account(monkeypatch):
         assert client.post("/api/v1/auth/login", json={"name": "Provision Driver", "password": "provisioned unique password"}).status_code == 200
 
 
-def test_render_demo_password_provisions_seeded_accounts_on_startup(monkeypatch):
+def test_render_demo_password_provisions_seeded_accounts_on_startup(monkeypatch, tmp_path):
+    monkeypatch.setattr(routeos_app, "DATABASE_PATH", tmp_path / "demo.db")
     monkeypatch.setenv("ROUTEOS_DEVELOPMENT_AUTH", "0")
-    monkeypatch.setenv("ROUTEOS_DEMO_PASSWORD", "Demo123Route")
+    monkeypatch.setenv("ROUTEOS_DEMO_PASSWORD", "Demo123")
     with api() as client:
         response = client.post(
             "/api/v1/auth/login",
-            json={"name": "Sreekandan Nair", "password": "Demo123Route"},
+            json={"name": "Sreekandan Nair", "password": "Demo123"},
         )
         assert response.status_code == 200
 

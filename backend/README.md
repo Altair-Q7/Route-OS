@@ -63,13 +63,19 @@ For a Render Web Service, use `backend` as the Root Directory, `pip install -r
 requirements.txt` as the Build Command, and the following Start Command:
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port $PORT
+python -u serve.py
 ```
 
 Set the Health Check Path to `/health`. Render must receive the service port from
 `$PORT`; binding only to `127.0.0.1` or hard-coding port `8000` causes deployment
 port detection to time out. The repository root also contains `render.yaml` with
 these settings for Blueprint-based deployment.
+
+The launcher reads Render's `PORT`, binds to `0.0.0.0`, and uses one worker with
+Python's asyncio loop and the h11 HTTP implementation. It logs each startup stage
+immediately; database readiness still completes before the service accepts requests.
+For an existing dashboard-created service, update its Start Command manually:
+changing `render.yaml` alone does not change that service's settings.
 
 The tool prompts securely and revokes earlier sessions. Put production behind
 HTTPS. Release Android builds require a configured HTTPS URL; debug builds allow
@@ -87,7 +93,8 @@ Startup preserves provisioned passwords and existing sessions. Seeded accounts
 have no production password until explicitly provisioned.
 
 On Render plans without Shell access, set the secret environment variable
-`ROUTEOS_DEMO_PASSWORD` to a password of 12–256 characters. When that password changes, the
+`ROUTEOS_DEMO_PASSWORD` to a demo password of 7–256 characters (`Demo123` is supported).
+Regular account passwords still require at least 12 characters. When the demo password changes, the
 backend provisions it for all three seeded demo accounts and revokes
 their previous sessions. Keep `ROUTEOS_DEVELOPMENT_AUTH=0`; this preserves normal
 password authentication without exposing passwordless login.
