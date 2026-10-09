@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../core/bridge.dart';
 import '../map/native_map.dart';
 import '../routing/planner.dart';
+import '../deliveries/delivery_panel.dart';
 
 class RouteOsFlutterHome extends StatefulWidget {
   const RouteOsFlutterHome({super.key});
@@ -784,7 +785,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   }
 
   Future<void> server() async {
-    final value = await nameDialog('RouteOS server HTTPS URL');
+    final value = await nameDialog(session['development'] == true
+        ? 'RouteOS server URL (local or HTTPS)' : 'RouteOS server HTTPS URL');
     if (value != null) {
       try {
         await request('server', {'url': value});
@@ -1209,6 +1211,21 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                       onPressed: searchSheet,
                       icon: const Icon(Icons.search),
                     ),
+                    if (loggedIn && !authRequired)
+                      IconButton(
+                        tooltip: 'Deliveries',
+                        icon: const Icon(Icons.local_shipping_outlined),
+                        onPressed: () => showDialog<void>(
+                          context: context,
+                          builder: (_) => Dialog.fullscreen(
+                            child: DeliveryPanel(
+                              request: request,
+                              isAdmin: isAdmin,
+                              activeRideId: (session['active_ride_id'] as num? ?? 0).toInt(),
+                            ),
+                          ),
+                        ),
+                      ),
                     IconButton(
                       tooltip: 'Offline maps',
                       onPressed: () => command('maps.download'),

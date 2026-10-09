@@ -1,5 +1,7 @@
 # RouteOS backend foundation
 
+For the optional local ERPNext delivery-tracking integration, see [ERPNEXT.md](ERPNEXT.md).
+
 This is the minimal product-data boundary for the Organic Maps based RouteOS
 MVP. Organic Maps remains responsible for geographic behavior.
 

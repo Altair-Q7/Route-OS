@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import logging
 import time
+import asyncio
 from contextlib import asynccontextmanager, closing
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -17,6 +18,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
+from erpnext_integration import DeliveryIntegration, initialize as initialize_deliveries
 
 
 ROOT = Path(__file__).resolve().parent
@@ -215,6 +217,7 @@ def initialize_database() -> None:
             token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
             expires_at TEXT NOT NULL)""")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_auth_token ON users(auth_token)")
+        initialize_deliveries(db)
         db.execute(
             """
             UPDATE rides SET status = 'ended', ended_at = started_at
@@ -570,7 +573,15 @@ async def lifespan(app: FastAPI):
     logger.info("RouteOS: initializing database and demo accounts")
     initialize_database()
     logger.info("RouteOS: database ready in %.2fs", time.monotonic() - started)
-    yield
+    sync_task = asyncio.create_task(delivery_integration.run())
+    try:
+        yield
+    finally:
+        sync_task.cancel()
+        try:
+            await sync_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="RouteOS Backend", version="0.1.0", lifespan=lifespan)
@@ -581,6 +592,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+delivery_integration = DeliveryIntegration(connection, utc_now)
+delivery_integration.register(app, current_user)
 
 
 @app.get("/health")

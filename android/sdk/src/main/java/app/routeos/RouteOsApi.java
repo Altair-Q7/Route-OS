@@ -339,7 +339,7 @@ public final class RouteOsApi {
     }
   }
 
-  private static JSONObject getObject(@NonNull Context context, String path) throws Exception {
+  public static JSONObject getObject(@NonNull Context context, String path) throws Exception {
     HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl(context) + path).openConnection();
     try {
       connection.setInstanceFollowRedirects(false);

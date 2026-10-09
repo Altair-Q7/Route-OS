@@ -293,7 +293,7 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
               "id", prefs.getLong("driver_id", 0), "name", prefs.getString("driver_name", ""), "role",
               prefs.getString("role", "driver"), "authenticated", RouteOsApi.hasSession(activity), "development",
               (activity.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0,
-              "active_ride_id", prefs.getLong("active_ride_id", 0), "recording",
+              "server_url", RouteOsApi.baseUrl(activity), "active_ride_id", prefs.getLong("active_ride_id", 0), "recording",
               app.organicmaps.sdk.location.TrackRecorder.nativeIsTrackRecordingEnabled(), "tracking_stale_label",
               activity.getString(app.organicmaps.R.string.routeos_tracking_stale)));
         }
@@ -307,6 +307,21 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
         }
         case "maps.download" -> { activity.startActivity(new android.content.Intent(activity, app.organicmaps.downloader.DownloaderActivity.class)); result.success(null); }
         case "routes" -> loadRoutes(result);
+        case "deliveries" -> async(result, () -> RouteOsApi.getObject(activity, "/api/v1/deliveries"));
+        case "erpnext.catalog" -> async(result, () -> RouteOsApi.getObject(activity, "/api/v1/erpnext/catalog"));
+        case "erpnext.import" -> async(result, () -> RouteOsApi.post(activity, "/api/v1/erpnext/import", data));
+        case "erpnext.sync" -> async(result, () -> RouteOsApi.post(activity, "/api/v1/erpnext/sync", data));
+        case "delivery.ride" -> async(result, () -> RouteOsApi.post(activity,
+            "/api/v1/deliveries/" + data.getLong("id") + "/ride", new JSONObject().put("ride_id", data.getLong("ride_id"))));
+        case "delivery.confirm" -> async(result, () -> RouteOsApi.post(activity,
+            "/api/v1/deliveries/" + data.getLong("id") + "/stops/"
+                + android.net.Uri.encode(data.getString("stop_id")),
+            new JSONObject().put("status", data.getString("status")).put("reason", data.optString("reason"))
+                .put("items", data.optJSONArray("items") == null ? new JSONArray() : data.getJSONArray("items"))));
+        case "delivery.products" -> async(result, () -> RouteOsApi.post(activity,
+            "/api/v1/deliveries/" + data.getLong("id") + "/stops/"
+                + android.net.Uri.encode(data.getString("stop_id")) + "/products",
+            new JSONObject().put("items", data.getJSONArray("items"))));
         case "route" -> {
           long generation=++previewGeneration;
           recordedPreviewId=0; RouteOsTrackPreview.clear(activity);
