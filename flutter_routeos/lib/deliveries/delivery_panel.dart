@@ -156,6 +156,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
     String status,
   ) async {
     String reason = '';
+    String extra = '';
     final form = GlobalKey<FormState>();
     final products = (stop['items'] as List? ?? []).cast<Map>();
     final quantities = {for (final item in products) item['id'] as String: '0'};
@@ -222,6 +223,36 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                       onChanged: (value) =>
                           quantities[item['id'] as String] = value,
                     ),
+                if (recordsProducts)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: TextFormField(
+                      initialValue: '',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Extra this shop asked for next trip',
+                        helperText:
+                            'Recorded only. Nothing extra is handed over now.',
+                      ),
+                      validator: (value) {
+                        final text = (value ?? '').trim();
+                        if (text.isEmpty) return null;
+                        final qty = num.tryParse(text);
+                        if (qty == null ||
+                            !qty.isFinite ||
+                            qty <= 0 ||
+                            !RegExp(
+                              r'^(?:[0-9]+(?:\.[0-9]{1,3})?|\.[0-9]{1,3})$',
+                            ).hasMatch(text)) {
+                          return 'Enter a positive quantity with up to 3 decimals';
+                        }
+                        return null;
+                      },
+                      onChanged: (value) => extra = value.trim(),
+                    ),
+                  ),
                 if (status == 'failed' || status == 'partial')
                   TextFormField(
                     maxLength: 500,
@@ -270,6 +301,16 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                   'id': item['id'],
                   'delivered_quantity': quantities[item['id']],
                 },
+            ]
+          : [],
+      // The shop's request for more is recorded for a later trip, not handed over.
+      'extras': recordsProducts && extra.isNotEmpty && products.isNotEmpty
+          ? [
+              {
+                'product_name': products.first['product_name'],
+                'uom': products.first['uom'],
+                'quantity': extra,
+              },
             ]
           : [],
     });

@@ -22,6 +22,34 @@ void main() {
     ],
   };
 
+  /// One pending stop carrying a single batter line, used by the quantity tests.
+  final pendingStop = <String, dynamic>{
+    'assignments': [
+      {
+        ...assignment,
+        'ride_id': 3,
+        'stops': [
+          {
+            'id': 'stop-a',
+            'customer': 'Metro Fresh',
+            'address_text': 'Street A',
+            'status': 'pending',
+            'reason': '',
+            'items': [
+              {
+                'id': 'batter',
+                'product_name': 'Idli Batter',
+                'planned_quantity': '5',
+                'delivered_quantity': '0',
+                'uom': 'packet',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
   testWidgets('driver sees assignments and links freshly restored ride ID', (
     tester,
   ) async {
@@ -170,6 +198,108 @@ void main() {
       find.text('partial'),
       findsNothing,
     ); // confirmed outcomes have no editable action buttons
+  });
+
+  testWidgets(
+    'a shop request for extra is recorded without raising the delivered amount',
+    (tester) async {
+      Map<String, dynamic>? confirmation;
+      Future<dynamic> request(
+        String method, [
+        Map<String, dynamic> data = const {},
+      ]) async {
+        if (method == 'session') return {};
+        if (method == 'delivery.confirm') {
+          confirmation = data;
+          return {};
+        }
+        return pendingStop;
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('delivered'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), '5'); // handed over exactly the plan
+      await tester.enterText(fields.at(1), '3'); // extra the shop asked for
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+
+      expect(confirmation!['items'], [
+        {'id': 'batter', 'delivered_quantity': '5'},
+      ]);
+      expect(confirmation!['extras'], [
+        {'product_name': 'Idli Batter', 'uom': 'packet', 'quantity': '3'},
+      ]);
+    },
+  );
+
+  testWidgets('no extra is sent when the shop asks for nothing more', (
+    tester,
+  ) async {
+    Map<String, dynamic>? confirmation;
+    Future<dynamic> request(
+      String method, [
+      Map<String, dynamic> data = const {},
+    ]) async {
+      if (method == 'session') return {};
+      if (method == 'delivery.confirm') {
+        confirmation = data;
+        return {};
+      }
+      return pendingStop;
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('delivered'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.enterText(find.byType(TextFormField).at(0), '5');
+    await tester.tap(find.text('Confirm'));
+    await tester.pumpAndSettle();
+
+    expect(confirmation!['extras'], isEmpty);
+  });
+
+  testWidgets('an extra request must be a positive quantity', (tester) async {
+    final calls = <String>[];
+    Future<dynamic> request(
+      String method, [
+      Map<String, dynamic> data = const {},
+    ]) async {
+      if (method == 'session') return {};
+      if (method == 'delivery.confirm') calls.add(method);
+      return pendingStop;
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('delivered'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(0), '5');
+    await tester.enterText(fields.at(1), '0');
+    await tester.tap(find.text('Confirm'));
+    await tester.pump();
+    expect(calls, isEmpty);
+    expect(find.textContaining('positive quantity'), findsOneWidget);
   });
 
   testWidgets(
