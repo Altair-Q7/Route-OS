@@ -374,6 +374,13 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
           Framework.nativeZoomToPoint(loc.getLatitude(),loc.getLongitude(),15,true);
           result.success(java.util.Map.of("latitude",loc.getLatitude(),"longitude",loc.getLongitude()));
         }
+        // Reads the current fix without moving the map, so anchoring a route at the
+        // driver cannot jerk the view away from the place they are choosing.
+        case "location.current" -> {
+          Location loc = MwmApplication.from(activity).getLocationHelper().getSavedLocation();
+          if (loc == null) throw new IllegalStateException("Waiting for GPS. Enable location and try again.");
+          result.success(java.util.Map.of("latitude",loc.getLatitude(),"longitude",loc.getLongitude()));
+        }
         case "zoom" -> { if (data.optBoolean("in")) app.organicmaps.sdk.Map.zoomIn(); else app.organicmaps.sdk.Map.zoomOut(); result.success(null); }
         case "center" -> { Framework.nativeZoomToPoint(data.getDouble("latitude"),data.getDouble("longitude"),15,true); result.success(null); }
         case "preview.clear" -> {

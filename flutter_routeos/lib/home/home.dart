@@ -234,6 +234,13 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     }
   }
 
+  /// Serialises point additions so two quick taps cannot both claim the start of
+  /// an empty route while the GPS anchor is still being read.
+  Future<void> _adds = Future<void>.value();
+
+  void queuePoint(RoutePoint point) =>
+      _adds = _adds.then((_) => addPoint(point));
+
   void event(dynamic raw) {
     if (!mounted || raw is! Map || raw['version'] != 1) return;
     final data = raw['data'];
@@ -254,7 +261,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           }
           inserting = null;
         } else {
-          if (!planner.add(point)) message('Maximum 102 route points reached.');
+          queuePoint(point);
+          return;
         }
         calculate();
       case 'map.point.selected':
@@ -415,6 +423,33 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     } finally {
       if (identical(calculationWaiter, waiter)) calculationWaiter = null;
     }
+  }
+
+  /// Adds a point to a drawn route.
+  ///
+  /// On an empty route the driver's own GPS position is added first, so the place
+  /// they search or tap becomes the destination rather than the start. Without a
+  /// GPS fix the point still starts the route instead of being dropped.
+  Future<bool> addPoint(RoutePoint point) async {
+    if (planner.points.isEmpty) {
+      try {
+        final start = await request('location.current');
+        if (!planner.add(
+          RoutePoint.fromJson(Map<String, dynamic>.from(start as Map)),
+        )) {
+          message('Maximum 100 waypoints plus start and destination.');
+          return false;
+        }
+      } catch (_) {
+        // No usable GPS fix: let the chosen point start the route.
+      }
+    }
+    if (!planner.add(point)) {
+      message('Maximum 100 waypoints plus start and destination.');
+      return false;
+    }
+    await calculate();
+    return true;
   }
 
   Future<void> locate({bool add = false}) async {
@@ -992,16 +1027,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             message('End navigation before editing a route.');
                             return;
                           }
-                          if (!planner.add(RoutePoint.fromJson(p))) {
-                            message(
-                              'Maximum 100 waypoints plus start and destination.',
-                            );
-                            return;
-                          }
                           command('center', p);
                           Navigator.pop(ctx);
                           setState(() => page = 'planner');
-                          calculate();
+                          queuePoint(RoutePoint.fromJson(p));
                         },
                       );
                     },

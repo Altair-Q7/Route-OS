@@ -253,6 +253,110 @@ void main() {
     },
   );
 
+  testWidgets('first tap anchors the route at the driver GPS position', (
+    tester,
+  ) async {
+    final generations = <int>[];
+    messenger.setMockMethodCallHandler(Bridge.methods, (call) async {
+      if (call.method == 'calculate') {
+        generations.add(((call.arguments as Map)['data'] as Map)['generation'] as int);
+      }
+      return switch (call.method) {
+        'session' => {'id': 1, 'role': 'driver', 'name': 'Alice'},
+        'draft.load' => {'ui_page': 'planner', 'points': []},
+        'routes' => [],
+        'draft.save' => {},
+        'location.current' => {'latitude': 9.93, 'longitude': 76.27},
+        _ => null,
+      };
+    });
+    await showHome(tester);
+    await tester.pumpAndSettle();
+
+    emit(tester, 'map.tap', {'latitude': 10.1, 'longitude': 76.5});
+    await tester.pumpAndSettle();
+
+    // Two points: the GPS start first, then the place the driver tapped.
+    expect(generations, isNotEmpty);
+    expect(find.textContaining('2 points'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('a later tap appends without adding another start', (
+    tester,
+  ) async {
+    messenger.setMockMethodCallHandler(Bridge.methods, (call) async {
+      return switch (call.method) {
+        'session' => {'id': 1, 'role': 'driver', 'name': 'Alice'},
+        'draft.load' => {'ui_page': 'planner', 'points': []},
+        'routes' => [],
+        'draft.save' => {},
+        'location.current' => {'latitude': 9.93, 'longitude': 76.27},
+        _ => null,
+      };
+    });
+    await showHome(tester);
+    await tester.pumpAndSettle();
+
+    emit(tester, 'map.tap', {'latitude': 10.1, 'longitude': 76.5});
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2 points'), findsOneWidget);
+
+    emit(tester, 'map.tap', {'latitude': 10.2, 'longitude': 76.6});
+    await tester.pumpAndSettle();
+    expect(find.textContaining('3 points'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('two quick taps still produce one start point', (tester) async {
+    messenger.setMockMethodCallHandler(Bridge.methods, (call) async {
+      return switch (call.method) {
+        'session' => {'id': 1, 'role': 'driver', 'name': 'Alice'},
+        'draft.load' => {'ui_page': 'planner', 'points': []},
+        'routes' => [],
+        'draft.save' => {},
+        'location.current' => {'latitude': 9.93, 'longitude': 76.27},
+        _ => null,
+      };
+    });
+    await showHome(tester);
+    await tester.pumpAndSettle();
+
+    emit(tester, 'map.tap', {'latitude': 10.1, 'longitude': 76.5});
+    emit(tester, 'map.tap', {'latitude': 10.2, 'longitude': 76.6});
+    await tester.pumpAndSettle();
+
+    // One GPS start plus both tapped places, not two starts.
+    expect(find.textContaining('3 points'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('without a GPS fix the tapped point still starts the route', (
+    tester,
+  ) async {
+    messenger.setMockMethodCallHandler(Bridge.methods, (call) async {
+      return switch (call.method) {
+        'session' => {'id': 1, 'role': 'driver', 'name': 'Alice'},
+        'draft.load' => {'ui_page': 'planner', 'points': []},
+        'routes' => [],
+        'location.current' => throw PlatformException(
+          code: 'REQUEST_FAILED',
+          message: 'Waiting for GPS',
+        ),
+        _ => null,
+      };
+    });
+    await showHome(tester);
+    await tester.pumpAndSettle();
+
+    emit(tester, 'map.tap', {'latitude': 10.1, 'longitude': 76.5});
+    await tester.pumpAndSettle();
+
+    // The route is not blocked by the missing fix.
+    expect(find.textContaining('1 point'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('resuming while routes load does not queue a second refresh', (
     tester,
   ) async {
