@@ -87,6 +87,12 @@ def initialize(db):
     db.execute("INSERT OR IGNORE INTO erp_settings VALUES ('instance_id', ?)", (secrets.token_hex(12),))
     if 'items' not in {row['name'] for row in db.execute('PRAGMA table_info(delivery_events)')}:
         db.execute("ALTER TABLE delivery_events ADD COLUMN items TEXT NOT NULL DEFAULT '[]'")
+    # Client polling needs a change timestamp that every delivery edit refreshes.
+    # `last_sync` only moves for ERPNext rows, so it cannot drive that cursor.
+    if 'updated_at' not in {row['name'] for row in db.execute('PRAGMA table_info(delivery_assignments)')}:
+        db.execute("ALTER TABLE delivery_assignments ADD COLUMN updated_at TEXT")
+    # Also repairs rows predating the upgrade, and any left without a timestamp.
+    db.execute("UPDATE delivery_assignments SET updated_at=COALESCE(last_sync, created_at) WHERE updated_at IS NULL")
 
 
 class ImportTrip(BaseModel):
@@ -116,6 +122,46 @@ class ProductList(BaseModel):
     items: list[ProductPlan] = Field(min_length=1, max_length=100)
 
 
+class StopIn(BaseModel):
+    """One supermarket on a natively built trip."""
+    stop_ref: str = Field(default="", max_length=140)
+    customer: str = Field(min_length=1, max_length=140)
+    address: str = Field(default="", max_length=500)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    items: list[ProductPlan] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def trimmed(self):
+        self.customer = self.customer.strip()
+        if not self.customer:
+            raise ValueError("Supermarket name is required")
+        return self
+
+
+class TripIn(BaseModel):
+    """A delivery trip created directly by an admin, without ERPNext."""
+    trip: str = Field(min_length=1, max_length=140)
+    driver_id: int = Field(gt=0)
+    vehicle: str = Field(default="", max_length=60)
+    stops: list[StopIn] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_stops(self):
+        self.trip = self.trip.strip()
+        if not self.trip:
+            raise ValueError("Trip reference is required")
+        seen = set()
+        for stop in self.stops:
+            key = stop.stop_ref.strip()
+            if not key:
+                raise ValueError("Each stop needs a reference")
+            if key in seen:
+                raise ValueError(f"Duplicate stop reference: {key}")
+            seen.add(key)
+        return self
+
+
 class ProductDelivered(BaseModel):
     id: str = Field(min_length=1, max_length=140)
     delivered_quantity: Decimal = Field(ge=0, max_digits=12, decimal_places=3)
@@ -135,6 +181,9 @@ class StopUpdate(BaseModel):
 
 
 class DeliveryIntegration:
+    #: Trips built in the RouteOS admin panel instead of imported from ERPNext.
+    NATIVE_SITE = 'native'
+
     def __init__(self, connection, now):
         self.connection, self.now = connection, now
         self.sync_lock = threading.Lock()
@@ -179,6 +228,7 @@ class DeliveryIntegration:
         result["sync_pending"] |= bool(row["last_error"])
         if result["ride"] and result["ride"]["ended_at"]:
             result["sync_pending"] |= not row["last_sync"] or result["ride"]["ended_at"] > row["last_sync"]
+        result["source"] = "native" if row["site"] == self.NATIVE_SITE else "erpnext"
         result["events"] = [dict(event) for event in db.execute(
             "SELECT actor_id,stop_id,status,reason,location,created_at,items FROM delivery_events WHERE assignment_id=? ORDER BY id",
             (row["id"],))]
@@ -252,13 +302,46 @@ class DeliveryIntegration:
                 import logging
                 logging.getLogger("uvicorn.error").exception("RouteOS ERPNext sync failed")
 
-    def register(self, app, current_user):
+    def register(self, app, current_user, external_client=None):
         @app.get("/api/v1/deliveries")
         def deliveries(me=Depends(current_user)):
             with closing(self.connection()) as db:
                 rows = db.execute("SELECT * FROM delivery_assignments WHERE (? OR driver_id=?) ORDER BY id DESC LIMIT 100",
                                   (int(me["role"] == "admin"), me["id"])).fetchall()
                 return {"assignments": [self.snapshot(db, row) for row in rows]}
+
+        @app.post("/api/v1/deliveries/trips", status_code=201)
+        def create_trip(body: TripIn, me=Depends(current_user)):
+            """Create a delivery trip from the admin panel, without ERPNext."""
+            self.admin(me)
+            with closing(self.connection()) as db:
+                existing = db.execute('SELECT * FROM delivery_assignments WHERE site=? AND trip=?',
+                                      (self.NATIVE_SITE, body.trip)).fetchone()
+                if existing:
+                    if existing['driver_id'] != body.driver_id:
+                        raise HTTPException(409, 'Trip is already assigned to another RouteOS driver')
+                    return self.snapshot(db, existing)
+                driver = db.execute("SELECT role FROM users WHERE id=?", (body.driver_id,)).fetchone()
+                if not driver or driver["role"] != "driver":
+                    raise HTTPException(422, "Choose a RouteOS driver account")
+                stops = [{"id": stop.stop_ref.strip(), "customer": stop.customer, "address": stop.address,
+                          "address_text": stop.address, "delivery_note": None,
+                          "latitude": stop.latitude, "longitude": stop.longitude,
+                          "status": "pending", "reason": "", "confirmed_at": None,
+                          "items": [{'id': secrets.token_hex(12), **item.model_dump(mode='json'),
+                                     'delivered_quantity': '0'} for item in stop.items]}
+                         for stop in body.stops]
+                db.execute("BEGIN IMMEDIATE")
+                try:
+                    cursor = db.execute("""INSERT INTO delivery_assignments
+                        (site,trip,driver_id,erp_driver,vehicle,stops,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)""",
+                        (self.NATIVE_SITE, body.trip, body.driver_id, '', body.vehicle.strip(),
+                         json.dumps(stops), self.now(), self.now()))
+                    db.commit()
+                except sqlite3.IntegrityError as error:
+                    raise HTTPException(409, "Trip already exists") from error
+                return self.snapshot(db, db.execute("SELECT * FROM delivery_assignments WHERE id=?",
+                                                    (cursor.lastrowid,)).fetchone())
 
         @app.get("/api/v1/erpnext/catalog")
         def catalog(me=Depends(current_user)):
@@ -352,8 +435,8 @@ class DeliveryIntegration:
                     raise HTTPException(409, 'Products can only be assigned before a ride, on stops without a Delivery Note')
                 stop['items'] = [{'id':secrets.token_hex(12), **item.model_dump(mode='json'), 'delivered_quantity':'0'}
                                  for item in body.items]
-                db.execute('UPDATE delivery_assignments SET stops=?,revision=revision+1,next_attempt=NULL WHERE id=?',
-                           (json.dumps(stops), assignment_id))
+                db.execute('UPDATE delivery_assignments SET stops=?,revision=revision+1,next_attempt=NULL,updated_at=? WHERE id=?',
+                           (json.dumps(stops), self.now(), assignment_id))
                 db.commit()
                 return self.snapshot(db, db.execute('SELECT * FROM delivery_assignments WHERE id=?', (assignment_id,)).fetchone())
 
@@ -372,7 +455,8 @@ class DeliveryIntegration:
                 if ride["vehicle_number"].strip().casefold() != (row["vehicle"] or "").strip().casefold():
                     raise HTTPException(409, "Ride vehicle number must match the ERPNext delivery vehicle")
                 try:
-                    db.execute("UPDATE delivery_assignments SET ride_id=?,revision=revision+1 WHERE id=?", (body.ride_id, assignment_id))
+                    db.execute("UPDATE delivery_assignments SET ride_id=?,revision=revision+1,updated_at=? WHERE id=?",
+                               (body.ride_id, self.now(), assignment_id))
                     db.commit()
                 except sqlite3.IntegrityError as error:
                     raise HTTPException(409, "Ride is already linked to another delivery trip") from error
@@ -420,8 +504,8 @@ class DeliveryIntegration:
                 stop.update(status=body.status, reason=body.reason, confirmed_at=now)
                 for item in products:
                     item['delivered_quantity'] = submitted.get(item['id'], '0')
-                db.execute("UPDATE delivery_assignments SET stops=?,revision=revision+1,next_attempt=NULL WHERE id=?",
-                           (json.dumps(stops), assignment_id))
+                db.execute("UPDATE delivery_assignments SET stops=?,revision=revision+1,next_attempt=NULL,updated_at=? WHERE id=?",
+                           (json.dumps(stops), now, assignment_id))
                 db.execute("""INSERT INTO delivery_events(assignment_id,actor_id,stop_id,status,reason,location,created_at,items)
                     VALUES (?,?,?,?,?,?,?,?)""", (assignment_id, me["id"], stop_id, body.status, body.reason,
                                               json.dumps(location), now, json.dumps(products)))
@@ -437,3 +521,40 @@ class DeliveryIntegration:
                 db.execute("UPDATE delivery_assignments SET next_attempt=NULL WHERE site=?", (site,))
                 db.commit()
             return {"queued": True}
+
+        if external_client is not None:
+            self.register_client_reads(app, external_client)
+
+    def register_client_reads(self, app, external_client):
+        """Read-only endpoints for the client's own reporting system."""
+        @app.get("/api/v1/client/deliveries")
+        def client_deliveries(since: str = "", me=Depends(external_client)):
+            """Polling endpoint. `since` is an ISO-8601 timestamp; omit it for a full read.
+
+            The cursor tracks delivery confirmations and assignment edits, not live GPS
+            samples, so a trip is reported once its outcomes change.
+            """
+            query = "SELECT * FROM delivery_assignments WHERE 1=1"
+            params = []
+            if since:
+                try:
+                    parsed = datetime.fromisoformat(since.strip().replace('Z', '+00:00'))
+                except ValueError as error:
+                    raise HTTPException(422, "since must be an ISO-8601 timestamp") from error
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                query += " AND updated_at>?"
+                params.append(parsed.astimezone(timezone.utc).isoformat())
+            query += " ORDER BY id DESC"
+            with closing(self.connection()) as db:
+                rows = db.execute(query, params).fetchall()
+                return {"trips": [self.snapshot(db, row) for row in rows], "count": len(rows)}
+
+        @app.get("/api/v1/client/deliveries/{assignment_id}")
+        def client_delivery(assignment_id: int, me=Depends(external_client)):
+            """Full detail for one trip: outcomes, quantities, reasons and GPS evidence."""
+            with closing(self.connection()) as db:
+                row = db.execute("SELECT * FROM delivery_assignments WHERE id=?", (assignment_id,)).fetchone()
+                if row is None:
+                    raise HTTPException(404, "delivery assignment not found")
+                return self.snapshot(db, row)

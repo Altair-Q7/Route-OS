@@ -561,6 +561,19 @@ def current_user(x_routeos_token: str | None = Header(default=None), authorizati
     return dict(user)
 
 
+def external_client(x_routeos_client_key: str | None = Header(default=None)) -> dict:
+    """Read-only server-to-server access for the client's own reporting system.
+
+    The key never grants ride or delivery mutation; those stay behind `current_user`.
+    """
+    expected = os.getenv("ROUTEOS_CLIENT_API_KEY", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="client API access is not configured")
+    if not x_routeos_client_key or not hmac.compare_digest(x_routeos_client_key, expected):
+        raise HTTPException(status_code=401, detail="invalid client API key")
+    return {"role": "client"}
+
+
 def caller_owns(me: dict, driver_id: int) -> None:
     if driver_id != me["id"]:
         raise HTTPException(status_code=403, detail="driver mismatch")
@@ -593,7 +606,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 delivery_integration = DeliveryIntegration(connection, utc_now)
-delivery_integration.register(app, current_user)
+delivery_integration.register(app, current_user, external_client)
 
 
 @app.get("/health")
