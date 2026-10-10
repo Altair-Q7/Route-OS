@@ -255,6 +255,21 @@ def test_client_access_requires_configuration(monkeypatch, tmp_path):
         assert client.get("/api/v1/client/deliveries", headers=client_headers()).status_code == 503
 
 
+def test_driver_list_is_admin_only_and_ordered(native):
+    client, _, driver, headers = native
+    assert client.get("/api/v1/drivers", headers=headers).status_code == 403
+    assert client.get("/api/v1/drivers").status_code == 401
+    _driver(client, "Anil Batter Driver")
+    listed = client.get("/api/v1/drivers", headers=admin_headers(native)).json()["drivers"]
+    assert [row["name"] for row in listed] == sorted(row["name"] for row in listed)
+    assert driver["id"] in [row["id"] for row in listed]
+    assert "Sreekandan Nair" not in [row["name"] for row in listed]  # admins are not assignable
+
+
+def admin_headers(native):
+    return native[1]
+
+
 def test_client_polling_cursor_and_validation(native):
     client, admin, driver, headers = native
     assignment = client.post("/api/v1/deliveries/trips", headers=admin, json=trip_body(driver["id"])).json()

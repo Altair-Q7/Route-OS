@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'trip_builder.dart';
+
 typedef DeliveryRequest =
     Future<dynamic> Function(String method, [Map<String, dynamic> data]);
 
@@ -421,8 +423,28 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
             spacing: 12,
             children: [
               FilledButton.icon(
-                onPressed: loading ? null : () => perform(importTrip),
+                onPressed: loading
+                    ? null
+                    : () async {
+                        final created = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => TripBuilder(request: widget.request),
+                          ),
+                        );
+                        if (created == true && mounted) {
+                          setState(
+                            () => notice =
+                                'Trip created and assigned to the driver.',
+                          );
+                          await load();
+                        }
+                      },
                 icon: const Icon(Icons.add),
+                label: const Text('Create trip'),
+              ),
+              FilledButton.icon(
+                onPressed: loading ? null : () => perform(importTrip),
+                icon: const Icon(Icons.sync_alt),
                 label: const Text('Assign ERPNext trip'),
               ),
               OutlinedButton(
@@ -454,8 +476,8 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                 const ListTile(
                   title: Text('No delivery assignments'),
                   subtitle: Text(
-                    'An admin can import an ERPNext delivery trip here. '
-                    'Drivers only see their own assignments.',
+                    'An admin can create a trip here, or import an ERPNext '
+                    'delivery trip. Drivers only see their own assignments.',
                   ),
                 ),
               for (final assignment in assignments)

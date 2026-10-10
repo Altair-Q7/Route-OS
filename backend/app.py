@@ -1285,6 +1285,16 @@ def driver_active_ride(driver_id: int, me: dict = Depends(current_user)) -> dict
     return dict(row)
 
 
+@app.get("/api/v1/drivers")
+def drivers(me: dict = Depends(current_user)) -> dict:
+    """Admin-only driver list for assigning work."""
+    if me["role"] != "admin":
+        raise HTTPException(status_code=403, detail="admin access required")
+    with closing(connection()) as db:
+        rows = db.execute("SELECT id,name FROM users WHERE role='driver' ORDER BY name").fetchall()
+    return {"drivers": [dict(row) for row in rows]}
+
+
 @app.get("/api/v1/manifest")
 def manifest() -> dict:
     """Service manifest - describes RouteOS capabilities for client apps.
@@ -1312,6 +1322,9 @@ def manifest() -> dict:
             "rides": "/api/v1/rides",
             "active_rides": "/api/v1/rides/active",
             "events": "/api/v1/events",
+            "deliveries": "/api/v1/deliveries",
+            "create_trip": "/api/v1/deliveries/trips",
+            "drivers": "/api/v1/drivers",
         },
     }
 
