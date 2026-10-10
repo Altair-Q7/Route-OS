@@ -313,6 +313,14 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
         case "erpnext.catalog" -> async(result, () -> RouteOsApi.getObject(activity, "/api/v1/erpnext/catalog"));
         case "erpnext.import" -> async(result, () -> RouteOsApi.post(activity, "/api/v1/erpnext/import", data));
         case "erpnext.sync" -> async(result, () -> RouteOsApi.post(activity, "/api/v1/erpnext/sync", data));
+        case "delivery.extras" -> async(result, () -> RouteOsApi.getObject(activity, "/api/v1/deliveries/extras"));
+        case "delivery.extras.resolve" -> async(result, () -> {
+          JSONArray ids = new JSONArray();
+          for (int i = 0; i < data.getJSONArray("ids").length(); i++)
+            ids.put(data.getJSONArray("ids").getLong(i));
+          return RouteOsApi.post(activity, "/api/v1/deliveries/extras/resolve",
+              new JSONObject().put("ids", ids).put("note", data.optString("note", "")));
+        });
         case "delivery.ride" -> async(result, () -> RouteOsApi.post(activity,
             "/api/v1/deliveries/" + data.getLong("id") + "/ride", new JSONObject().put("ride_id", data.getLong("ride_id"))));
         case "delivery.confirm" -> async(result, () -> RouteOsApi.post(activity,

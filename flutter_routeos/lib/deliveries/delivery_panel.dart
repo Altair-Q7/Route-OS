@@ -24,6 +24,7 @@ class DeliveryPanel extends StatefulWidget {
 
 class _DeliveryPanelState extends State<DeliveryPanel> {
   List<Map<String, dynamic>> assignments = [];
+  List<Map<String, dynamic>> extras = [];
   bool loading = false;
   String? error;
   String? notice;
@@ -39,11 +40,24 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
   Future<void> load() async {
     final result = await widget.request('deliveries') as Map;
     final session = await widget.request('session') as Map;
+    var pendingExtras = <Map<String, dynamic>>[];
+    // Admin-only; drivers simply have no extras to see.
+    if (widget.isAdmin) {
+      try {
+        final requested = await widget.request('delivery.extras') as Map;
+        pendingExtras = (requested['extras'] as List)
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      } catch (_) {
+        pendingExtras = <Map<String, dynamic>>[];
+      }
+    }
     if (mounted) {
       setState(() {
         assignments = (result['assignments'] as List)
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
+        extras = pendingExtras;
         activeRideId = (session['active_ride_id'] as num? ?? 0).toInt();
       });
     }
@@ -317,6 +331,23 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
     await load();
   }
 
+  /// Closes extra requests once they are planned into a trip or moved to another shop.
+  Future<void> resolveExtras(Map<String, dynamic> extra) async {
+    await perform(() async {
+      await widget.request('delivery.extras.resolve', {
+        'ids': extra['ids'],
+        'note': 'Planned into a later trip',
+      });
+      await load();
+      if (mounted) {
+        setState(
+          () => notice =
+              '${extra['customer']} no longer waiting on ${extra['quantity']} ${extra['uom']} ${extra['product_name']}.',
+        );
+      }
+    });
+  }
+
   Future<void> assignProducts(Map assignment, Map stop) async {
     final form = GlobalKey<FormState>();
     final rows = <Map<String, String>>[
@@ -513,6 +544,36 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
           child: ListView(
             padding: const EdgeInsets.all(12),
             children: [
+              if (widget.isAdmin && extras.isNotEmpty) ...[
+                Text(
+                  'Extra requested by shops',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const Text(
+                  'Drivers handed over only the plan. Build these into a later trip, '
+                  'or give them to another shop so nothing is left over.',
+                ),
+                const SizedBox(height: 8),
+                for (final extra in extras)
+                  Card(
+                    child: ListTile(
+                      title: Text(
+                        '${extra['customer']} asked for ${extra['quantity']} ${extra['uom']} '
+                        '${extra['product_name']}',
+                      ),
+                      subtitle: Text(
+                        extra['requests'] == 1
+                            ? 'Recorded once'
+                            : 'Recorded ${extra['requests']} times',
+                      ),
+                      trailing: TextButton(
+                        onPressed: loading ? null : () => resolveExtras(extra),
+                        child: const Text('Planned'),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+              ],
               if (assignments.isEmpty && !loading)
                 const ListTile(
                   title: Text('No delivery assignments'),

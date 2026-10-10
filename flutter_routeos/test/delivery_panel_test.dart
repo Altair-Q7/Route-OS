@@ -50,6 +50,82 @@ void main() {
     ],
   };
 
+  testWidgets('admin sees outstanding extra requests and can plan them in', (
+    tester,
+  ) async {
+    final calls = <String>[];
+    var resolved = false;
+    Future<dynamic> request(
+      String method, [
+      Map<String, dynamic> data = const {},
+    ]) async {
+      calls.add(method);
+      if (method == 'session') return {};
+      if (method == 'delivery.extras') {
+        if (resolved) return {'extras': []};
+        return {
+          'extras': [
+            {
+              'ids': [4, 5],
+              'customer': 'Metro Fresh',
+              'product_name': 'Idli Batter',
+              'uom': 'packet',
+              'quantity': '5',
+              'requests': 2,
+            },
+          ],
+        };
+      }
+      if (method == 'delivery.extras.resolve') {
+        expect(data['ids'], [4, 5]);
+        resolved = true;
+        return {'resolved': 2};
+      }
+      return {'assignments': []};
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Metro Fresh asked for 5 packet Idli Batter'),
+      findsOneWidget,
+    );
+    expect(find.text('Recorded 2 times'), findsOneWidget);
+
+    await tester.tap(find.text('Planned'));
+    await tester.pumpAndSettle();
+    expect(calls, contains('delivery.extras.resolve'));
+    expect(find.text('Extra requested by shops'), findsNothing);
+  });
+
+  testWidgets('drivers are never shown the extra-request list', (
+    tester,
+  ) async {
+    final calls = <String>[];
+    Future<dynamic> request(
+      String method, [
+      Map<String, dynamic> data = const {},
+    ]) async {
+      calls.add(method);
+      if (method == 'session') return {};
+      if (method == 'delivery.extras') return {'extras': []};
+      return {'assignments': [assignment]};
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 0),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Extra requested by shops'), findsNothing);
+    expect(calls, isNot(contains('delivery.extras')));
+  });
+
   testWidgets('driver sees assignments and links freshly restored ride ID', (
     tester,
   ) async {
