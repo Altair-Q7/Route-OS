@@ -525,6 +525,44 @@ class DeliveryIntegration:
         if external_client is not None:
             self.register_client_reads(app, external_client)
 
+    def client_trip(self, db, row):
+        """Client-facing view of one trip.
+
+        Deliberately a projection rather than the driver-facing snapshot: the
+        client has no use for ERPNext sync bookkeeping, and the site column can
+        hold their ERP URL.
+        """
+        snapshot = self.snapshot(db, row)
+        return {
+            'id': snapshot['id'],
+            'trip': snapshot['trip'],
+            'status': snapshot['status'],
+            'driver_id': snapshot['driver_id'],
+            'driver_name': snapshot['driver_name'],
+            'vehicle': snapshot['vehicle'],
+            'created_at': snapshot['created_at'],
+            'updated_at': snapshot['updated_at'],
+            'ride': snapshot['ride'],
+            'location': snapshot['location'],
+            'stops': [{
+                'id': stop['id'],
+                'customer': stop['customer'],
+                'address_text': stop['address_text'],
+                'latitude': stop['latitude'],
+                'longitude': stop['longitude'],
+                'status': stop['status'],
+                'reason': stop['reason'],
+                'confirmed_at': stop['confirmed_at'],
+                'items': [{
+                    'product_name': item['product_name'],
+                    'uom': item['uom'],
+                    'planned_quantity': item['planned_quantity'],
+                    'delivered_quantity': item['delivered_quantity'],
+                } for item in stop['items']],
+            } for stop in snapshot['stops']],
+            'product_totals': snapshot['product_totals'],
+        }
+
     def register_client_reads(self, app, external_client):
         """Read-only endpoints for the client's own reporting system."""
         @app.get("/api/v1/client/deliveries")
@@ -548,7 +586,7 @@ class DeliveryIntegration:
             query += " ORDER BY id DESC"
             with closing(self.connection()) as db:
                 rows = db.execute(query, params).fetchall()
-                return {"trips": [self.snapshot(db, row) for row in rows], "count": len(rows)}
+                return {"trips": [self.client_trip(db, row) for row in rows], "count": len(rows)}
 
         @app.get("/api/v1/client/deliveries/{assignment_id}")
         def client_delivery(assignment_id: int, me=Depends(external_client)):
@@ -557,4 +595,4 @@ class DeliveryIntegration:
                 row = db.execute("SELECT * FROM delivery_assignments WHERE id=?", (assignment_id,)).fetchone()
                 if row is None:
                     raise HTTPException(404, "delivery assignment not found")
-                return self.snapshot(db, row)
+                return self.client_trip(db, row)

@@ -237,6 +237,20 @@ def test_client_reads_trips_with_its_key(native):
     assert client.get("/api/v1/client/deliveries/999999", headers=client_headers()).status_code == 404
 
 
+def test_client_response_hides_erp_sync_internals(native):
+    client, admin, driver, _ = native
+    client.post("/api/v1/deliveries/trips", headers=admin, json=trip_body(driver["id"]))
+    trip = client.get("/api/v1/client/deliveries", headers=client_headers()).json()["trips"][0]
+    # `site` can hold the customer's own ERP URL, and the rest is internal retry state.
+    assert set(trip) == {"id", "trip", "status", "driver_id", "driver_name", "vehicle",
+                         "created_at", "updated_at", "ride", "location", "stops",
+                         "product_totals"}
+    assert set(trip["stops"][0]) == {"id", "customer", "address_text", "latitude",
+                                     "longitude", "status", "reason", "confirmed_at", "items"}
+    assert set(trip["stops"][0]["items"][0]) == {"product_name", "uom",
+                                                 "planned_quantity", "delivered_quantity"}
+
+
 def test_client_key_is_required_and_read_only(native):
     client, admin, driver, headers = native
     assignment = client.post("/api/v1/deliveries/trips", headers=admin, json=trip_body(driver["id"])).json()
@@ -295,6 +309,13 @@ def test_client_polling_cursor_and_validation(native):
     assert updated["trips"][0]["stops"][0]["status"] == "delivered"
 
     assert client.get("/api/v1/client/deliveries?since=yesterday", headers=client_headers()).status_code == 422
+
+    # A raw '+' in the query string decodes to a space, which the client must
+    # avoid by percent-encoding the timestamp.
+    unencoded = client.get(f"/api/v1/client/deliveries?since={cursor}", headers=client_headers())
+    assert unencoded.status_code in (200, 422)
+    encoded = client.get(f"/api/v1/client/deliveries?since={quote(cursor)}", headers=client_headers())
+    assert encoded.status_code == 200
 
 
 def test_existing_rows_get_a_change_timestamp_on_migration(native):
