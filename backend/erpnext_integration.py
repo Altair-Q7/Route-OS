@@ -83,6 +83,16 @@ def initialize(db):
             id INTEGER PRIMARY KEY AUTOINCREMENT, assignment_id INTEGER NOT NULL REFERENCES delivery_assignments(id),
             actor_id INTEGER NOT NULL REFERENCES users(id), stop_id TEXT NOT NULL,
             status TEXT NOT NULL, reason TEXT NOT NULL, location TEXT, created_at TEXT NOT NULL);
+        -- Extra batter a shop asked for. The driver never hands it over on the same
+        -- trip; it raises that shop's allocation on the next one, or is reassigned
+        -- to another shop so perishable stock is never left over.
+        CREATE TABLE IF NOT EXISTS extra_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, site TEXT NOT NULL, customer TEXT NOT NULL,
+            product_name TEXT NOT NULL, uom TEXT NOT NULL, quantity TEXT NOT NULL,
+            trip TEXT NOT NULL, stop_id TEXT NOT NULL, actor_id INTEGER NOT NULL REFERENCES users(id),
+            status TEXT NOT NULL DEFAULT 'pending', applied_trip TEXT, resolution TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_extra_requests_site ON extra_requests(site, status, id DESC);
     """)
     db.execute("INSERT OR IGNORE INTO erp_settings VALUES ('instance_id', ?)", (secrets.token_hex(12),))
     if 'items' not in {row['name'] for row in db.execute('PRAGMA table_info(delivery_events)')}:
@@ -167,10 +177,36 @@ class ProductDelivered(BaseModel):
     delivered_quantity: Decimal = Field(ge=0, max_digits=12, decimal_places=3)
 
 
+class ExtraRequested(BaseModel):
+    """More batter a shop asked for, recorded at the stop for the next trip."""
+    product_name: str = Field(min_length=1, max_length=140)
+    uom: str = Field(min_length=1, max_length=40)
+    quantity: Decimal = Field(gt=0, max_digits=12, decimal_places=3)
+
+    @model_validator(mode="after")
+    def trimmed(self):
+        self.product_name, self.uom = self.product_name.strip(), self.uom.strip()
+        if not self.product_name or not self.uom:
+            raise ValueError("Product name and unit are required")
+        return self
+
+
+class ExtraRequestIn(BaseModel):
+    items: list[ExtraRequested] = Field(default_factory=list, max_length=100)
+
+
+class ResolveExtras(BaseModel):
+    """Close extra requests that are now planned into a trip or moved elsewhere."""
+
+    ids: list[int] = Field(min_length=1, max_length=200)
+    note: str = Field(default="", max_length=200)
+
+
 class StopUpdate(BaseModel):
     status: str = Field(pattern="^(arrived|delivered|partial|failed)$")
     reason: str = Field(default="", max_length=500)
     items: list[ProductDelivered] = Field(default_factory=list, max_length=100)
+    extras: list[ExtraRequested] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def failure_reason(self):
@@ -201,6 +237,18 @@ class DeliveryIntegration:
         if me["role"] != "admin" and row["driver_id"] != me["id"]:
             raise HTTPException(403, "delivery belongs to another driver")
         return row
+
+    @staticmethod
+    def extras_signature(extras):
+        """Comparable form so a retried confirmation does not duplicate requests."""
+        return {(item.product_name, item.uom, str(item.quantity)) for item in extras}
+
+    @staticmethod
+    def pending_extras(db, site, customer):
+        rows = db.execute("""SELECT product_name,uom,SUM(CAST(quantity AS REAL)) AS quantity FROM extra_requests
+            WHERE site=? AND customer=? AND status='pending' GROUP BY product_name,uom""",
+                          (site, customer)).fetchall()
+        return [dict(row) for row in rows]
 
     def snapshot(self, db, row):
         result = dict(row)
@@ -495,7 +543,17 @@ class DeliveryIntegration:
                     raise HTTPException(422, 'Only delivered or partial outcomes accept product quantities')
                 same_items = all(Decimal(str(item['delivered_quantity'])) == Decimal(submitted.get(item['id'], '0'))
                                  for item in products)
-                if stop["status"] == body.status and stop["reason"] == body.reason and same_items:
+                pending_extras = self.pending_extras(db, row["site"], stop["customer"])
+                # Compare against the requests already raised for this exact stop, not the
+                # per-shop total: SUM returns a float and several trips can add up.
+                recorded = {(item["product_name"], item["uom"], str(item["quantity"])) for item in
+                            db.execute("""SELECT product_name,uom,quantity FROM extra_requests
+                                WHERE trip=? AND stop_id=? AND status='pending'""",
+                                       (row["trip"], stop_id)).fetchall()}
+                submitted_extras = self.extras_signature(body.extras)
+                same_extras = not (submitted_extras - recorded)
+                if (stop["status"] == body.status and stop["reason"] == body.reason
+                        and same_items and same_extras):
                     return self.snapshot(db, row)
                 if stop["status"] in ("delivered", "partial", "failed"):
                     raise HTTPException(409, "Confirmed delivery outcomes cannot be overwritten")
@@ -509,8 +567,52 @@ class DeliveryIntegration:
                 db.execute("""INSERT INTO delivery_events(assignment_id,actor_id,stop_id,status,reason,location,created_at,items)
                     VALUES (?,?,?,?,?,?,?,?)""", (assignment_id, me["id"], stop_id, body.status, body.reason,
                                               json.dumps(location), now, json.dumps(products)))
+                # The request is for a later trip, never extra handed over now.
+                for signature in sorted(submitted_extras - recorded):
+                    product_name, uom, quantity = signature
+                    db.execute("""INSERT INTO extra_requests
+                        (site,customer,product_name,uom,quantity,trip,stop_id,actor_id,created_at,updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        (row["site"], stop["customer"], product_name, uom, quantity,
+                         row["trip"], stop_id, me["id"], now, now))
                 db.commit()
                 return self.snapshot(db, db.execute("SELECT * FROM delivery_assignments WHERE id=?", (assignment_id,)).fetchone())
+
+        @app.get("/api/v1/deliveries/extras")
+        def extras(me=Depends(current_user)):
+            """Extra batter shops asked for, awaiting the next trip or reassignment."""
+            with closing(self.connection()) as db:
+                rows = db.execute("""SELECT id,customer,product_name,uom,quantity,trip,status,created_at
+                    FROM extra_requests WHERE status='pending' ORDER BY id DESC LIMIT 200""").fetchall()
+                grouped = {}
+                for row in rows:
+                    key = (row["customer"], row["product_name"], row["uom"])
+                    total = grouped.setdefault(key, {'ids': [], 'customer': row["customer"],
+                                                     'product_name': row["product_name"], 'uom': row["uom"],
+                                                     'quantity': Decimal(0), 'requests': 0})
+                    total['quantity'] += Decimal(str(row["quantity"]))
+                    total['requests'] += 1
+                    total['ids'].append(row["id"])
+                return {"extras": [{**item, 'quantity': str(item['quantity'])} for item in grouped.values()]}
+
+        @app.post("/api/v1/deliveries/extras/resolve")
+        def resolve_extras(body: ResolveExtras, me=Depends(current_user)):
+            """Close extra requests once they are folded into a trip or moved to another shop."""
+            self.admin(me)
+            if not body.ids:
+                raise HTTPException(422, "Choose at least one extra request to resolve")
+            now = self.now()
+            resolved = 0
+            with closing(self.connection()) as db:
+                db.execute("BEGIN IMMEDIATE")
+                for request_id in body.ids:
+                    cursor = db.execute("""UPDATE extra_requests SET status='resolved',resolution=?,updated_at=?
+                        WHERE id=? AND status='pending'""", (body.note.strip(), now, request_id))
+                    resolved += cursor.rowcount
+                db.commit()
+            if not resolved:
+                raise HTTPException(409, "Those extra requests were already resolved")
+            return {"resolved": resolved}
 
         @app.post("/api/v1/erpnext/sync")
         def sync(me=Depends(current_user)):
