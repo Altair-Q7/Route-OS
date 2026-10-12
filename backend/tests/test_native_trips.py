@@ -244,7 +244,7 @@ def test_client_response_hides_erp_sync_internals(native):
     trip = client.get("/api/v1/client/deliveries", headers=client_headers()).json()["trips"][0]
     # `site` can hold the customer's own ERP URL, and the rest is internal retry state.
     assert set(trip) == {"id", "trip", "status", "driver_id", "driver_name", "vehicle",
-                         "created_at", "updated_at", "ride", "location", "stops",
+                         "created_at", "updated_at", "ride", "location", "surplus", "stops",
                          "product_totals"}
     assert set(trip["stops"][0]) == {"id", "supermarket_id", "customer", "address_text", "latitude",
                                      "longitude", "status", "reason", "confirmed_at", "items"}

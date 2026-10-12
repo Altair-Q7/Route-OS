@@ -259,6 +259,24 @@ class StandingOrderIn(BaseModel):
     items: list[ProductPlan] = Field(min_length=1, max_length=100)
 
 
+class TransferIn(BaseModel):
+    """Move planned batter from one stop to another, so nothing is left over."""
+    from_stop_id: str = Field(min_length=1, max_length=140)
+    to_stop_id: str = Field(min_length=1, max_length=140)
+    product_name: str = Field(min_length=1, max_length=140)
+    uom: str = Field(min_length=1, max_length=40)
+    quantity: Decimal = Field(gt=0, max_digits=12, decimal_places=3)
+
+    @model_validator(mode="after")
+    def distinct_stops(self):
+        self.product_name, self.uom = self.product_name.strip(), self.uom.strip()
+        if self.from_stop_id == self.to_stop_id:
+            raise ValueError("Choose two different supermarkets")
+        if not self.product_name or not self.uom:
+            raise ValueError("Product name and unit are required")
+        return self
+
+
 class TripIn(BaseModel):
     """A delivery trip created directly by an admin, without ERPNext."""
     trip: str = Field(min_length=1, max_length=140)
@@ -377,6 +395,18 @@ class DeliveryIntegration:
         if result["ride"] and result["ride"]["ended_at"]:
             result["sync_pending"] |= not row["last_sync"] or result["ride"]["ended_at"] > row["last_sync"]
         result["source"] = row["source"] or "native"
+        # Batter still on the van: planned but not yet handed over. Anything left
+        # when the trip closes is what would spoil.
+        surplus = {}
+        for stop in result['stops']:
+            if stop['status'] in ('delivered', 'partial', 'failed'):
+                continue
+            for item in stop['items']:
+                key = (item['product_name'], item['uom'])
+                surplus[key] = surplus.get(key, Decimal(0)) + (
+                    Decimal(str(item['planned_quantity'])) - Decimal(str(item['delivered_quantity'])))
+        result['surplus'] = [{'product_name': name, 'uom': uom, 'quantity': str(amount)}
+                             for (name, uom), amount in surplus.items()]
         result["events"] = [dict(event) for event in db.execute(
             "SELECT actor_id,stop_id,status,reason,location,created_at,items FROM delivery_events WHERE assignment_id=? ORDER BY id",
             (row["id"],))]
@@ -585,6 +615,52 @@ class DeliveryIntegration:
                     raise HTTPException(409, "Trip already exists") from error
                 return self.snapshot(db, db.execute("SELECT * FROM delivery_assignments WHERE id=?",
                                                     (cursor.lastrowid,)).fetchone())
+
+        @app.post("/api/v1/deliveries/{assignment_id}/transfer")
+        def transfer_planned(assignment_id: int, body: TransferIn, me=Depends(current_user)):
+            """Move planned quantity between stops on a trip that has not started.
+
+            Batter is perishable, so batter a shop will not take is given to
+            another shop on the same trip instead of being left over.
+            """
+            self.admin(me)
+            with closing(self.connection()) as db:
+                db.execute("BEGIN IMMEDIATE")
+                row = self.authorized(db, assignment_id, me)
+                if row["ride_id"]:
+                    raise HTTPException(409, "The trip has already started; outcomes can no longer be changed")
+                stops = json.loads(row["stops"])
+                source = next((item for item in stops if item["id"] == body.from_stop_id), None)
+                target = next((item for item in stops if item["id"] == body.to_stop_id), None)
+                if source is None or target is None:
+                    raise HTTPException(404, "delivery stop not found")
+                moving = Decimal(str(body.quantity))
+                found = False
+                for item in source['items']:
+                    if item['product_name'] == body.product_name and item['uom'] == body.uom:
+                        found = True
+                        planned = Decimal(str(item['planned_quantity']))
+                        if moving >= planned:
+                            raise HTTPException(422, 'Move less than the planned quantity, or remove the line')
+                        item['planned_quantity'] = str(planned - moving)
+                if not found:
+                    raise HTTPException(422, f"{body.product_name} is not planned for the first supermarket")
+                receiving = next((item for item in target['items']
+                                  if item['product_name'] == body.product_name and item['uom'] == body.uom), None)
+                if receiving is None:
+                    target['items'].append({'id': secrets.token_hex(12), 'item_code': '',
+                                            'product_name': body.product_name, 'uom': body.uom,
+                                            'planned_quantity': str(moving), 'delivered_quantity': '0'})
+                else:
+                    receiving['planned_quantity'] = str(Decimal(str(receiving['planned_quantity'])) + moving)
+                    if receiving.get('delivered_quantity') not in (None, '0'):
+                        raise HTTPException(409, "The second supermarket has already confirmed this product")
+                now = self.now()
+                db.execute("UPDATE delivery_assignments SET stops=?,revision=revision+1,next_attempt=NULL,updated_at=? WHERE id=?",
+                           (json.dumps(stops), now, assignment_id))
+                db.commit()
+                return self.snapshot(db, db.execute("SELECT * FROM delivery_assignments WHERE id=?",
+                                                    (assignment_id,)).fetchone())
 
         @app.get("/api/v1/erpnext/catalog")
         def catalog(me=Depends(current_user)):
@@ -840,6 +916,7 @@ class DeliveryIntegration:
             'updated_at': snapshot['updated_at'],
             'ride': snapshot['ride'],
             'location': snapshot['location'],
+            'surplus': snapshot['surplus'],
             'stops': [{
                 'id': stop['id'],
                 'supermarket_id': stop.get('supermarket_id'),
