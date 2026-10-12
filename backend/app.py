@@ -23,6 +23,10 @@ from erpnext_integration import DeliveryIntegration, initialize as initialize_de
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.getenv("ROUTEOS_DATABASE", ROOT / "routeos.db"))
+# Sign-in throttling. A driver who mistypes their password must not lock the
+# account out, and one attacker must not be able to guess it indefinitely.
+LOGIN_MAX_ATTEMPTS = int(os.getenv("ROUTEOS_LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_WINDOW_SECONDS = 900.0
 
 
 def development_auth() -> bool:
@@ -216,6 +220,9 @@ def initialize_database() -> None:
         db.execute("""CREATE TABLE IF NOT EXISTS sessions (
             token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
             expires_at TEXT NOT NULL)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS login_attempts (
+            name TEXT NOT NULL, client TEXT NOT NULL, attempts INTEGER NOT NULL,
+            first_attempt REAL NOT NULL, PRIMARY KEY(name, client))""")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_auth_token ON users(auth_token)")
         initialize_deliveries(db)
         db.execute(
@@ -643,14 +650,59 @@ def create_user(user: UserIn) -> dict:
     return {"id": cursor.lastrowid, "name": name, "role": "driver", "auth_token": token, "created_at": created_at}
 
 
+def login_throttle(name: str, client: str) -> float:
+    """Seconds to wait before another sign-in attempt, or 0 when allowed.
+
+    Failures are counted per account and per client address so one attacker
+    cannot lock every driver out by guessing a single name.
+    """
+    with closing(connection()) as db:
+        row = db.execute(
+            "SELECT attempts, first_attempt FROM login_attempts WHERE name=? AND client=?",
+            (name.lower(), client)).fetchone()
+    if row is None:
+        return 0
+    if (time.monotonic() - row["first_attempt"]) > LOGIN_WINDOW_SECONDS:
+        return 0
+    if row["attempts"] < LOGIN_MAX_ATTEMPTS:
+        return 0
+    return LOGIN_WINDOW_SECONDS - (time.monotonic() - row["first_attempt"])
+
+
+def record_login_failure(name: str, client: str) -> None:
+    with closing(connection()) as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT attempts, first_attempt FROM login_attempts WHERE name=? AND client=?",
+                         (name.lower(), client)).fetchone()
+        if row is None or (time.monotonic() - row["first_attempt"]) > LOGIN_WINDOW_SECONDS:
+            db.execute("""INSERT INTO login_attempts(name,client,attempts,first_attempt) VALUES (?,?,1,?)
+                ON CONFLICT(name,client) DO UPDATE SET attempts=1, first_attempt=excluded.first_attempt""",
+                (name.lower(), client, time.monotonic()))
+        else:
+            db.execute("UPDATE login_attempts SET attempts=attempts+1 WHERE name=? AND client=?",
+                       (name.lower(), client))
+        db.commit()
+
+
+def clear_login_failures(name: str, client: str) -> None:
+    with closing(connection()) as db:
+        db.execute("DELETE FROM login_attempts WHERE name=? AND client=?", (name.lower(), client))
+        db.commit()
+
+
 @app.post("/api/v1/auth/login")
-def login(login: LoginIn) -> dict:
+def login(login: LoginIn, x_forwarded_for: str | None = Header(default=None)) -> dict:
     """Login with username and optional password.
     Two modes:
     1. Production: Password required, verified via PBKDF2 hash
     2. Development (ROUTEOS_DEVELOPMENT_AUTH=1): Quick-login with auth_token only
     """
     normalized_name = login.name.strip()
+    client = str(x_forwarded_for or "").split(",")[0].strip()
+    blocked_for = login_throttle(normalized_name, client)
+    if blocked_for:
+        raise HTTPException(status_code=429,
+                            detail=f"Too many sign-in attempts. Try again in {int(blocked_for) + 1} minutes.")
     with closing(connection()) as db:
         existing = db.execute(
             "SELECT id, name, role, auth_token, password_hash, created_at FROM users WHERE lower(name) = lower(?) ORDER BY id LIMIT 1",
@@ -661,17 +713,21 @@ def login(login: LoginIn) -> dict:
             encoded = user.pop("password_hash")
             if encoded:
                 if not login.password or not hmac.compare_digest(encoded, password_hash(login.password, encoded.split(":")[0])):
+                    record_login_failure(normalized_name, client)
                     raise HTTPException(status_code=401, detail="invalid credentials")
+                clear_login_failures(normalized_name, client)
                 user["auth_token"] = issue_session(db, user["id"])
                 db.commit()
                 return user
             if not development_auth():
+                record_login_failure(normalized_name, client)
                 raise HTTPException(status_code=401, detail="invalid credentials")
             if user["auth_token"] is None:
                 user["auth_token"] = new_token()
                 db.execute("UPDATE users SET auth_token = ? WHERE id = ?", (user["auth_token"], user["id"]))
                 db.commit()
             return user
+    record_login_failure(normalized_name, client)
     raise HTTPException(status_code=401, detail="unknown RouteOS quick-login account")
 
 
