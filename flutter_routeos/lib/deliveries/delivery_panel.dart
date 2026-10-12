@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'supermarket_directory.dart';
 import 'trip_builder.dart';
 
 typedef DeliveryRequest =
@@ -348,6 +349,145 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
     });
   }
 
+  /// Moves planned batter between two shops so nothing is left on the van.
+  Future<void> transfer(Map<String, dynamic> assignment) async {
+    final pending = [
+      for (final stop in assignment['stops'] as List)
+        if ((stop['status'] == 'pending' || stop['status'] == 'arrived'))
+          stop,
+    ];
+    if (pending.length < 2) {
+      setState(() => notice = 'Add at least two unconfirmed shops before moving batter.');
+      return;
+    }
+    var from = pending.first;
+    var to = pending[1];
+    final products = <Map<String, dynamic>>[
+      for (final item in (from['items'] as List? ?? []))
+        Map<String, dynamic>.from(item as Map),
+    ];
+    if (products.isEmpty) return;
+    var chosen = products.first;
+    final quantity = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, update) => AlertDialog(
+          title: const Text('Move batter between shops'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Batter a shop will not take can go to another shop on this trip '
+                'instead of being left over. The driver still hands over only the plan.',
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: from['id'],
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Take from'),
+                items: [
+                  for (final stop in pending)
+                    DropdownMenuItem(
+                      value: stop['id'],
+                      child: Text('${stop['customer']}',
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (value) => update(() {
+                  from = pending.firstWhere((stop) => stop['id'] == value);
+                  chosen = (from['items'] as List).first;
+
+                }),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: to['id'],
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Give to'),
+                items: [
+                  for (final stop in pending)
+                    DropdownMenuItem(
+                      value: stop['id'],
+                      child: Text('${stop['customer']}',
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (value) => update(
+                  () => to = pending.firstWhere((stop) => stop['id'] == value),
+                ),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: chosen['product_name'].toString(),
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Product'),
+                items: [
+                  for (final item in products)
+                    DropdownMenuItem(
+                      value: item['product_name'].toString(),
+                      child: Text(
+                        '${item['product_name']} (planned ${item['planned_quantity']} ${item['uom']})',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) => update(() {
+                  chosen = products.firstWhere(
+                    (item) => item['product_name'].toString() == value,
+                  );
+
+                }),
+              ),
+              TextField(
+                controller: quantity,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'How much to move (${chosen['uom']})',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final amount = double.tryParse(quantity.text.trim());
+                if (amount == null || amount <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Enter a positive quantity')),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Move'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      quantity.dispose();
+      return;
+    }
+    await perform(() async {
+      await widget.request('delivery.transfer', {
+        'id': assignment['id'],
+        'from_stop_id': from['id'],
+        'to_stop_id': to['id'],
+        'product_name': chosen['product_name'],
+        'uom': chosen['uom'],
+        'quantity': quantity.text.trim(),
+      });
+      quantity.dispose();
+      await load();
+    });
+  }
+
   Future<void> assignProducts(Map assignment, Map stop) async {
     final form = GlobalKey<FormState>();
     final rows = <Map<String, String>>[
@@ -538,6 +678,18 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                       }),
                 child: const Text('Sync to ERPNext'),
               ),
+              OutlinedButton.icon(
+                onPressed: loading
+                    ? null
+                    : () => Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                SupermarketDirectory(request: widget.request),
+                          ),
+                        ),
+                icon: const Icon(Icons.storefront_outlined),
+                label: const Text('Supermarkets'),
+              ),
             ],
           ),
         Expanded(
@@ -622,6 +774,29 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                         if (assignment['ride_id'] == null)
                           const Text(
                             'Driver: start a saved route using the ERP vehicle number, then link the ride here.',
+                          ),
+                        if ((assignment['surplus'] as List? ?? []).isNotEmpty &&
+                            assignment['ride_id'] == null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Still to hand over: ${(assignment['surplus'] as List).map((item) => '${item['quantity']} ${item['uom']} ${item['product_name']}').join(', ')}',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: loading
+                                      ? null
+                                      : () => perform(
+                                            () => transfer(assignment),
+                                          ),
+                                  child: const Text('Move between shops'),
+                                ),
+                              ],
+                            ),
                           ),
                         for (final stop in assignment['stops'] as List)
                           Padding(
