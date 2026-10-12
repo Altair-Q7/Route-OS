@@ -583,4 +583,205 @@ class AppStringsMl extends AppStrings {
 
   @override
   String get shopRefresh => 'സൂപ്പർമാർക്കറ്റുകൾ പുതുക്കുക';
+
+  @override
+  String get tabAccount => 'അക്കൗണ്ട്';
+
+  @override
+  String get routesFilterAll => 'എല്ലാവും';
+
+  @override
+  String get routesTitle => 'എന്റെ വഴികൾ';
+
+  @override
+  String get routesSavedTitle => 'സംരക്ഷിച്ച വഴികൾ';
+
+  @override
+  String get routesEmpty =>
+      'ഇതുവരെ സംരക്ഷിച്ച വഴികളില്ല. നിങ്ങളുടെ ആദ്യ വഴി ഒരുക്കുക അല്ലെങ്കിൽ റെക്കോർഡ് ചെയ്യുക.';
+
+  @override
+  String get routesSearch => 'സംരക്ഷിച്ച വഴികൾ തിരയുക';
+
+  @override
+  String get routesFavourites => 'ഇഷ്ടപ്പെട്ടവ';
+
+  @override
+  String get routesRemoveRecent => 'അടുത്ത വഴികളിൽ നിന്ന് നീക്കുക';
+
+  @override
+  String get routeCalculateFailed =>
+      'ഈ വഴി കണക്കാക്കാൻ കഴിഞ്ഞില്ല. ഓഫ്‌ലൈൻ ഭൂപടം പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.';
+
+  @override
+  String get routeLoadFailed =>
+      'ഈ വഴി ലോഡ് ചെയ്യാൻ കഴിഞ്ഞില്ല. കണക്ഷൻ പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.';
+
+  @override
+  String get routeTimeout =>
+      'വഴി കണക്കാക്കുന്നതിന് സമയം കഴിഞ്ഞു. മൾദേശീയ ഭൂപടങ്ങൾ പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.';
+
+  @override
+  String get routeName => 'വഴിയുടെ പേര്';
+
+  @override
+  String get routeDelete => 'വഴി ഇല്ലാതാക്കുക';
+
+  @override
+  String get routeRename => 'വഴിയുടെ പേര് മാറ്റുക';
+
+  @override
+  String get routeShare => 'വഴി പങ്കിടുക';
+
+  @override
+  String get routeOpen => 'വരച്ച വഴി തുറക്കുക / തിരുത്തുക';
+
+  @override
+  String get routeFollow => 'വഴി പിന്തുടരുക';
+
+  @override
+  String get routeFavouriteToggle => 'ഇഷ്ടപ്പെട്ടതായി മാറ്റുക';
+
+  @override
+  String get routeSaved => 'വഴി സംരക്ഷിതമായി. മറ്റ് ഡ്രൈവർമാർക്കും ലഭ്യമാണ്.';
+
+  @override
+  String get routeShared => 'വഴി RouteOS ഡ്രൈവർമാരുമായി പങ്കിടുത്തു.';
+
+  @override
+  String get drawOptimizeTitle => 'വേപ്പോയിന്റുകളുടെ ക്രമം ഒപ്റിമൈസ് ചെയ്യണോ?';
+
+  @override
+  String get drawOrganicsLimit =>
+      'Organic Maps-ലേക്ക് തുടക്കവും ലക്ഷ്യവും ഉൾപ്പെടുത്തി 100 വേപ്പോയിന്റുകൾ മാത്രമാണ് പോകാവുന്നത്.';
+
+  @override
+  String get drawDriverOnly =>
+      'വഴി വരയ്ക്കുക ഡ്രൈവർമാർക്ക് മാത്രമാണ് ലഭ്യമാകുക.';
+
+  @override
+  String get drawMaxPointsReached => 'പരമാവധി 102 വഴിപോയിന്റുകൾ എത്തി.';
+
+  @override
+  String get pointDelete => 'പോയിന്റ് ഇല്ലാതാക്കുക';
+
+  @override
+  String get pointInsertAfter => 'ശേഷം ചേർക്കുക';
+
+  @override
+  String get pointMoveOnMap => 'മാപ്പിൽ നീക്കുക';
+
+  @override
+  String get pointMoveEarlier => 'മുമ്പിലേക്ക് നീക്കുക';
+
+  @override
+  String get pointMoveLater => 'പിന്നിലേക്ക് നീക്കുക';
+
+  @override
+  String get pointMoveTap => 'ഈ പോയിന്റിനായി പുതിയ സ്ഥാനത്തിൽ ടാപ്പ് ചെയ്യുക';
+
+  @override
+  String get pointInsertTap => 'ഒരു പോയിന്റ് ചേർക്കാൻ ടാപ്പ് ചെയ്യുക';
+
+  @override
+  String get pointEdit => 'പോയിന്റ് തിരുത്തുക';
+
+  @override
+  String pointLabel(int number, String type) {
+    return 'പോയിന്റ് $number · $type';
+  }
+
+  @override
+  String get mapMyLocation => 'എന്റെ സ്ഥാനം';
+
+  @override
+  String get mapZoomIn => 'സമീപിക്കുക';
+
+  @override
+  String get mapZoomOut => 'അകനാക്കുക';
+
+  @override
+  String get mapDownloads => 'ഓഫ്‌ലൈൻ ഭൂപടങ്ങൾ';
+
+  @override
+  String get searchPlaces => 'സ്ഥലങ്ങൾ തിരയുക';
+
+  @override
+  String get vehicleSelect => 'വാഹനം തിരഞ്ഞെടുക്കുക';
+
+  @override
+  String get rideStart => 'റൈഡ് തുടങ്ങുക';
+
+  @override
+  String get rideEnd => 'റൈഡ് അവസാനിപ്പിക്കുക';
+
+  @override
+  String get rideEndTitle => 'ഈ റൈഡ് അവസാനിപ്പിക്കണോ?';
+
+  @override
+  String get rideWaitingGps => 'റൈഡ് സജീവം — GPS കാത്തിരിക്കുന്നു';
+
+  @override
+  String get rideWaitingGuidance => 'GPS മാർഗനിർദേശം കാത്തിരിക്കുന്നു';
+
+  @override
+  String get rideStarting => 'നാവിഗേഷൻ തുടങ്ങുന്നു — കാത്തിരിക്കുക.';
+
+  @override
+  String get rideLiveTrackingNote =>
+      'RouteOS റൈഡ് അവസാനിച്ചതാണെന്ന് സ്ഥിരീകരിച്ച ശേഷം ലൈവ് ട്രാക്കിംഗ് നിർത്തും.';
+
+  @override
+  String get rideLoadPrompt =>
+      'വഴി ലോഡ് ചെയ്ത് വാഹനം തിരഞ്ഞെടുത്ത് നാവിഗേഷൻ തുടങ്ങുക';
+
+  @override
+  String get rideLocationMissing => 'ലഭിച്ചില്ല';
+
+  @override
+  String get rideEndNavigationFirst =>
+      'വഴി തിരുത്തുന്നതിന് മുമ്പ് നാവിഗേഷൻ അവസാനിപ്പിക്കുക.';
+
+  @override
+  String get recordStopSave => 'നിർത്തി സംരക്ഷിക്കുക';
+
+  @override
+  String get recordDiscard => 'ഉപേക്ഷിക്കുക';
+
+  @override
+  String get recordDiscardTitle => 'റെക്കോർഡിംഗ് ഉപേക്ഷിക്കണോ?';
+
+  @override
+  String get recordStopFirst =>
+      'ആദ്യം റെക്കോർഡിംഗ് നിർത്തുക അല്ലെങ്കിൽ ഉപേക്ഷിക്കുക.';
+
+  @override
+  String get recordDiscardHint =>
+      'നേറ്റീവ് റെക്കോർഡർ നിർത്തി സംരക്ഷിക്കാത്ത ട്രാക്ക് ഉപേക്ഷിക്കുക.';
+
+  @override
+  String get recordSeparateNote =>
+      'അസൽ ജിപിഎസ് ട്രാക്ക് വരച്ച വഴികളിൽ നിന്ന് വേർതിരിച്ച് സൂക്ഷിക്കുന്നു.';
+
+  @override
+  String recordProgress(String distance) {
+    return 'റെക്കോർഡിംഗ് വഴി · $distance';
+  }
+
+  @override
+  String sessionRestoreFailed(String error) {
+    return 'നിങ്ങളുടെ സെഷൻ പുനഃസ്ഥാപിക്കാനായില്ല: $error';
+  }
+
+  @override
+  String get screenClosed => 'സ്ക്രീൻ അടച്ചു';
+
+  @override
+  String get loginDevelopmentAccounts => 'ഡെവലപ്മെന്റ് അക്കൗണ്ടുകൾ';
+
+  @override
+  String get actionRename => 'പേര് മാറ്റുക';
+
+  @override
+  String get adminRefreshRides => 'സജീവ റൈഡുകൾ പുതുക്കുക';
 }

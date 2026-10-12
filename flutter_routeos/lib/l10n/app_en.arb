@@ -347,5 +347,90 @@
   "tripBuilderTripReferenceRequired": "Enter a trip reference",
   "tripBuilderVehicleRequired": "Enter the vehicle number",
   "deliveriesRefresh": "Refresh deliveries",
-  "shopRefresh": "Refresh supermarkets"
+  "shopRefresh": "Refresh supermarkets",
+  "tabAccount": "Account",
+  "routesFilterAll": "All",
+  "routesTitle": "My Routes",
+  "routesSavedTitle": "Saved Routes",
+  "routesEmpty": "No saved routes yet. Plan or record your first route.",
+  "routesSearch": "Search saved routes",
+  "routesFavourites": "Favourites",
+  "routesRemoveRecent": "Remove from recent routes",
+  "routeCalculateFailed": "Could not calculate this route. Check offline map coverage and retry.",
+  "routeLoadFailed": "Could not load this route. Check your connection and retry.",
+  "routeTimeout": "Route calculation timed out. Check regional maps and retry.",
+  "routeName": "Route name",
+  "routeDelete": "Delete route",
+  "routeRename": "Rename route",
+  "routeShare": "Share route",
+  "routeOpen": "Open / edit drawn route",
+  "routeFollow": "Follow the route",
+  "routeFavouriteToggle": "Toggle favourite",
+  "routeSaved": "Route saved and available to other drivers.",
+  "routeShared": "Route shared with RouteOS drivers.",
+  "drawOptimizeTitle": "Optimize waypoint order?",
+  "drawOrganicsLimit": "Organic Maps supports 100 waypoints plus start and destination.",
+  "drawDriverOnly": "Route drawing is available to drivers only.",
+  "drawMaxPointsReached": "Maximum 102 route points reached.",
+  "pointDelete": "Delete point",
+  "pointInsertAfter": "Insert after",
+  "pointMoveOnMap": "Move on map",
+  "pointMoveEarlier": "Move earlier",
+  "pointMoveLater": "Move later",
+  "pointMoveTap": "Tap the new position for point",
+  "pointInsertTap": "Tap to insert a point",
+  "pointEdit": "Edit point",
+  "pointLabel": "Point {number} · {type}",
+  "@pointLabel": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      },
+      "type": {
+        "type": "String"
+      }
+    }
+  },
+  "mapMyLocation": "My location",
+  "mapZoomIn": "Zoom in",
+  "mapZoomOut": "Zoom out",
+  "mapDownloads": "Offline maps",
+  "searchPlaces": "Search places",
+  "vehicleSelect": "Select vehicle",
+  "rideStart": "Start ride",
+  "rideEnd": "End ride",
+  "rideEndTitle": "End this ride?",
+  "rideWaitingGps": "Ride active — waiting for GPS",
+  "rideWaitingGuidance": "Waiting for GPS guidance",
+  "rideStarting": "Starting navigation — please wait.",
+  "rideLiveTrackingNote": "Live tracking stops after RouteOS confirms the ride has ended.",
+  "rideLoadPrompt": "Load route, choose a vehicle, and start navigation",
+  "rideLocationMissing": "not received",
+  "rideEndNavigationFirst": "End navigation before editing a route.",
+  "recordStopSave": "Stop & save",
+  "recordDiscard": "Discard",
+  "recordDiscardTitle": "Discard recording?",
+  "recordStopFirst": "Stop or discard the recording first.",
+  "recordDiscardHint": "Stop the native recorder and discard the unsaved track.",
+  "recordSeparateNote": "Original GPS track is kept separate from drawn routes.",
+  "recordProgress": "Recording Route · {distance}",
+  "@recordProgress": {
+    "placeholders": {
+      "distance": {
+        "type": "String"
+      }
+    }
+  },
+  "sessionRestoreFailed": "Could not restore your session: {error}",
+  "@sessionRestoreFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "screenClosed": "Screen closed",
+  "loginDevelopmentAccounts": "Development accounts",
+  "actionRename": "Rename",
+  "adminRefreshRides": "Refresh live rides"
 }

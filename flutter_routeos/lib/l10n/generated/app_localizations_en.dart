@@ -582,4 +582,202 @@ class AppStringsEn extends AppStrings {
 
   @override
   String get shopRefresh => 'Refresh supermarkets';
+
+  @override
+  String get tabAccount => 'Account';
+
+  @override
+  String get routesFilterAll => 'All';
+
+  @override
+  String get routesTitle => 'My Routes';
+
+  @override
+  String get routesSavedTitle => 'Saved Routes';
+
+  @override
+  String get routesEmpty =>
+      'No saved routes yet. Plan or record your first route.';
+
+  @override
+  String get routesSearch => 'Search saved routes';
+
+  @override
+  String get routesFavourites => 'Favourites';
+
+  @override
+  String get routesRemoveRecent => 'Remove from recent routes';
+
+  @override
+  String get routeCalculateFailed =>
+      'Could not calculate this route. Check offline map coverage and retry.';
+
+  @override
+  String get routeLoadFailed =>
+      'Could not load this route. Check your connection and retry.';
+
+  @override
+  String get routeTimeout =>
+      'Route calculation timed out. Check regional maps and retry.';
+
+  @override
+  String get routeName => 'Route name';
+
+  @override
+  String get routeDelete => 'Delete route';
+
+  @override
+  String get routeRename => 'Rename route';
+
+  @override
+  String get routeShare => 'Share route';
+
+  @override
+  String get routeOpen => 'Open / edit drawn route';
+
+  @override
+  String get routeFollow => 'Follow the route';
+
+  @override
+  String get routeFavouriteToggle => 'Toggle favourite';
+
+  @override
+  String get routeSaved => 'Route saved and available to other drivers.';
+
+  @override
+  String get routeShared => 'Route shared with RouteOS drivers.';
+
+  @override
+  String get drawOptimizeTitle => 'Optimize waypoint order?';
+
+  @override
+  String get drawOrganicsLimit =>
+      'Organic Maps supports 100 waypoints plus start and destination.';
+
+  @override
+  String get drawDriverOnly => 'Route drawing is available to drivers only.';
+
+  @override
+  String get drawMaxPointsReached => 'Maximum 102 route points reached.';
+
+  @override
+  String get pointDelete => 'Delete point';
+
+  @override
+  String get pointInsertAfter => 'Insert after';
+
+  @override
+  String get pointMoveOnMap => 'Move on map';
+
+  @override
+  String get pointMoveEarlier => 'Move earlier';
+
+  @override
+  String get pointMoveLater => 'Move later';
+
+  @override
+  String get pointMoveTap => 'Tap the new position for point';
+
+  @override
+  String get pointInsertTap => 'Tap to insert a point';
+
+  @override
+  String get pointEdit => 'Edit point';
+
+  @override
+  String pointLabel(int number, String type) {
+    return 'Point $number · $type';
+  }
+
+  @override
+  String get mapMyLocation => 'My location';
+
+  @override
+  String get mapZoomIn => 'Zoom in';
+
+  @override
+  String get mapZoomOut => 'Zoom out';
+
+  @override
+  String get mapDownloads => 'Offline maps';
+
+  @override
+  String get searchPlaces => 'Search places';
+
+  @override
+  String get vehicleSelect => 'Select vehicle';
+
+  @override
+  String get rideStart => 'Start ride';
+
+  @override
+  String get rideEnd => 'End ride';
+
+  @override
+  String get rideEndTitle => 'End this ride?';
+
+  @override
+  String get rideWaitingGps => 'Ride active — waiting for GPS';
+
+  @override
+  String get rideWaitingGuidance => 'Waiting for GPS guidance';
+
+  @override
+  String get rideStarting => 'Starting navigation — please wait.';
+
+  @override
+  String get rideLiveTrackingNote =>
+      'Live tracking stops after RouteOS confirms the ride has ended.';
+
+  @override
+  String get rideLoadPrompt =>
+      'Load route, choose a vehicle, and start navigation';
+
+  @override
+  String get rideLocationMissing => 'not received';
+
+  @override
+  String get rideEndNavigationFirst => 'End navigation before editing a route.';
+
+  @override
+  String get recordStopSave => 'Stop & save';
+
+  @override
+  String get recordDiscard => 'Discard';
+
+  @override
+  String get recordDiscardTitle => 'Discard recording?';
+
+  @override
+  String get recordStopFirst => 'Stop or discard the recording first.';
+
+  @override
+  String get recordDiscardHint =>
+      'Stop the native recorder and discard the unsaved track.';
+
+  @override
+  String get recordSeparateNote =>
+      'Original GPS track is kept separate from drawn routes.';
+
+  @override
+  String recordProgress(String distance) {
+    return 'Recording Route · $distance';
+  }
+
+  @override
+  String sessionRestoreFailed(String error) {
+    return 'Could not restore your session: $error';
+  }
+
+  @override
+  String get screenClosed => 'Screen closed';
+
+  @override
+  String get loginDevelopmentAccounts => 'Development accounts';
+
+  @override
+  String get actionRename => 'Rename';
+
+  @override
+  String get adminRefreshRides => 'Refresh live rides';
 }

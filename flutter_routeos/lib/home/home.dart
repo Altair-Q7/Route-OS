@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../core/bridge.dart';
 import '../map/native_map.dart';
 import '../routing/planner.dart';
@@ -61,7 +62,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       setState(() => session = Map<String, dynamic>.from(value as Map));
       recording = session['recording'] == true;
       if ((session['active_ride_id'] as num? ?? 0) > 0) {
-        navigation = {'maneuver': 'Ride active — waiting for GPS'};
+        navigation = {'maneuver': AppStrings.of(context).rideWaitingGps};
         notifyNavigation();
       }
       if ((session['id'] as num? ?? 0) > 0 &&
@@ -90,7 +91,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               session.remove('active_ride_id');
             } else {
               session['active_ride_id'] = ride['id'];
-              navigation ??= {'maneuver': 'Ride active — waiting for GPS'};
+              navigation ??= {'maneuver': AppStrings.of(context).rideWaitingGps};
             }
           });
           notifyNavigation();
@@ -150,9 +151,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     String method, [
     Map<String, dynamic> data = const {},
   ]) async {
+    final closed = AppStrings.of(context).screenClosed;
     try {
       final value = await Bridge.call(method, data);
-      if (!mounted) throw StateError('Screen closed');
+      if (!mounted) throw StateError(closed);
       return value;
     } catch (e) {
       if (mounted && e is PlatformException && e.code == 'AUTH_EXPIRED') {
@@ -257,7 +259,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           moving = null;
         } else if (inserting != null) {
           if (!planner.insert(inserting! + 1, point)) {
-            message('Maximum 102 route points reached.');
+            message(AppStrings.of(context).drawMaxPointsReached);
           }
           inserting = null;
         } else {
@@ -313,7 +315,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         setState(() {
           page = 'home';
           navigation = {
-            'maneuver': 'Waiting for GPS guidance',
+            'maneuver': AppStrings.of(context).rideWaitingGuidance,
             ...Map<String, dynamic>.from(data as Map),
           };
         });
@@ -371,7 +373,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     calculationWaiter = waiter;
     if (planner.points.length > 102) {
       message(
-        'Organic Maps supports 100 waypoints plus start and destination.',
+        AppStrings.of(context).drawOrganicsLimit,
       );
       waiter?.complete(false);
       return;
@@ -395,7 +397,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
             calculationWaiter!.complete(false);
           }
           message(
-            'Route calculation timed out. Check regional maps and retry.',
+            AppStrings.of(context).routeTimeout,
           );
         });
       }
@@ -434,10 +436,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     if (planner.points.isEmpty) {
       try {
         final start = await request('location.current');
+        if (!mounted) return false;
         if (!planner.add(
           RoutePoint.fromJson(Map<String, dynamic>.from(start as Map)),
         )) {
-          message('Maximum 100 waypoints plus start and destination.');
+          message(AppStrings.of(context).drawMaxPoints);
           return false;
         }
       } catch (_) {
@@ -445,7 +448,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       }
     }
     if (!planner.add(point)) {
-      message('Maximum 100 waypoints plus start and destination.');
+      message(AppStrings.of(context).drawMaxPoints);
       return false;
     }
     await calculate();
@@ -460,7 +463,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         if (!planner.add(
           RoutePoint.fromJson(Map<String, dynamic>.from(p as Map)),
         )) {
-          message('Maximum 100 waypoints plus start and destination.');
+          if (!mounted) return;
+          message(AppStrings.of(context).drawMaxPoints);
           return;
         }
         await calculate();
@@ -485,12 +489,14 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       }
       setState(() => page = 'planner');
       if (!await calculateAndWait()) {
+        if (!mounted) return;
         message(
-          'Could not calculate this route. Check offline map coverage and retry.',
+          AppStrings.of(context).routeCalculateFailed,
         );
       }
     } catch (_) {
-      message('Could not load this route. Check your connection and retry.');
+      if (!mounted) return;
+      message(AppStrings.of(context).routeLoadFailed);
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -507,12 +513,12 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           controller: input,
           autofocus: true,
           maxLength: 160,
-          decoration: const InputDecoration(labelText: 'Route name'),
+          decoration: InputDecoration(labelText: AppStrings.of(context).routeName),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(AppStrings.of(context).actionCancel),
           ),
           FilledButton(
             onPressed: () {
@@ -520,7 +526,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 Navigator.pop(ctx, input.text.trim());
               }
             },
-            child: const Text('Save'),
+            child: Text(AppStrings.of(context).actionSave),
           ),
         ],
       ),
@@ -537,11 +543,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: Text(AppStrings.of(context).actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Confirm'),
+              child: Text(AppStrings.of(context).actionConfirm),
             ),
           ],
         ),
@@ -549,7 +555,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       false;
   Future<void> save() async {
     if (planner.state != PlannerState.ready) return;
-    final name = await nameDialog('Save route', planner.name);
+    final name = await nameDialog(AppStrings.of(context).drawSave, planner.name);
     if (!mounted || name == null) return;
     setState(() => busy = true);
     planner.state = PlannerState.saving;
@@ -588,7 +594,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, set) => AlertDialog(
-          title: const Text('Select vehicle'),
+          title: Text(AppStrings.of(context).vehicleSelect),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -604,23 +610,23 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     .toList(),
                 onChanged: (v) => set(() => type = v!),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               TextField(
                 controller: number,
-                decoration: const InputDecoration(labelText: 'Vehicle number'),
+                decoration: InputDecoration(labelText: 'Vehicle number'),
               ),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: Text(AppStrings.of(context).actionCancel),
             ),
             FilledButton(
               onPressed: () {
                 if (number.text.trim().isNotEmpty) Navigator.pop(ctx, true);
               },
-              child: const Text('Start ride'),
+              child: Text(AppStrings.of(context).rideStart),
             ),
           ],
         ),
@@ -668,8 +674,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
 
   Future<void> endRide() async {
     if (!await confirm(
-      'End this ride?',
-      'Live tracking stops after RouteOS confirms the ride has ended.',
+      AppStrings.of(context).rideEndTitle,
+      AppStrings.of(context).rideLiveTrackingNote,
     )) {
       return;
     }
@@ -689,11 +695,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   Future<void> changePage(String next) async {
     if (!mounted || busy) return;
     if (next == 'planner' && session['role'] == 'admin') {
-      message('Route drawing is available to drivers only.');
+      message(AppStrings.of(context).drawDriverOnly);
       return;
     }
     if (rideStarting) {
-      message('Starting navigation — please wait.');
+      message(AppStrings.of(context).rideStarting);
       return;
     }
     if (navigation != null) {
@@ -701,7 +707,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       return;
     }
     if (recording) {
-      message('Stop or discard the recording first.');
+      message(AppStrings.of(context).recordStopFirst);
       return;
     }
     setState(() => page = next);
@@ -731,7 +737,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 '${p.label}\n${p.latitude.toStringAsFixed(5)}, ${p.longitude.toStringAsFixed(5)}',
               ),
             ),
-            for (final item in ['Move on map', 'Insert after', 'Delete point'])
+            for (final item in [AppStrings.of(context).pointMoveOnMap, AppStrings.of(context).pointInsertAfter, AppStrings.of(context).pointDelete])
               ListTile(
                 title: Text(item),
                 onTap: () => Navigator.pop(ctx, item),
@@ -741,12 +747,13 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       ),
     );
     if (!mounted) return;
-    if (action == 'Delete point') {
+    if (action == AppStrings.of(context).pointDelete) {
       planner.remove(index);
       await calculate();
+      if (!mounted) return;
     }
-    if (action == 'Move on map') setState(() => moving = index);
-    if (action == 'Insert after') setState(() => inserting = index);
+    if (action == AppStrings.of(context).pointMoveOnMap) setState(() => moving = index);
+    if (action == AppStrings.of(context).pointInsertAfter) setState(() => inserting = index);
   }
 
   Future<void> login([String? selected]) async {
@@ -759,30 +766,30 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     final dialog = DialogRoute<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Sign in to RouteOS'),
+        title: Text(AppStrings.of(context).loginTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: name,
-              decoration: const InputDecoration(labelText: 'Account name'),
+              decoration: InputDecoration(labelText: AppStrings.of(context).loginAccountName),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             TextField(
               controller: password,
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Password'),
+              decoration: InputDecoration(labelText: AppStrings.of(context).loginPassword),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(AppStrings.of(context).actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Sign in'),
+            child: Text(AppStrings.of(context).actionSignIn),
           ),
         ],
       ),
@@ -821,7 +828,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
 
   Future<void> server() async {
     final value = await nameDialog(session['development'] == true
-        ? 'RouteOS server URL (local or HTTPS)' : 'RouteOS server HTTPS URL');
+        ? AppStrings.of(context).loginServerTitle : AppStrings.of(context).loginServerTitleHttps);
     if (value != null) {
       try {
         await request('server', {'url': value});
@@ -836,7 +843,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           authRequired = false;
         });
         await restore();
-        message('Server configured.');
+        if (!mounted) return;
+        message(AppStrings.of(context).loginServerConfigured);
       } catch (_) {}
     }
   }
@@ -848,7 +856,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
         .map((p) => planner.points.indexWhere((old) => old.id == p.id) + 1)
         .join(' → ');
     if (await confirm(
-          'Optimize waypoint order?',
+          AppStrings.of(context).drawOptimizeTitle,
           'Proposed order: $positions\nStart and destination stay fixed. This shortens geographic waypoint order, not necessarily road travel time. Organic Maps recalculates the road route. Undo restores the original order.',
         ) &&
         mounted) {
@@ -867,10 +875,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           height: MediaQuery.sizeOf(ctx).height * .65,
           child: Column(
             children: [
-              const Padding(
+              Padding(
                 padding: EdgeInsets.all(18),
                 child: Text(
-                  'Route points',
+                  AppStrings.of(context).drawPointsList,
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
               ),
@@ -919,22 +927,22 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                         },
                         itemBuilder: (_) => [
                           if (i > 0)
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'up',
-                              child: Text('Move earlier'),
+                              child: Text(AppStrings.of(context).pointMoveEarlier),
                             ),
                           if (i < planner.points.length - 1)
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'down',
-                              child: Text('Move later'),
+                              child: Text(AppStrings.of(context).pointMoveLater),
                             ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'move',
-                            child: Text('Move on map'),
+                            child: Text(AppStrings.of(context).pointMoveOnMap),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'insert',
-                            child: Text('Insert after'),
+                            child: Text(AppStrings.of(context).pointInsertAfter),
                           ),
                           const PopupMenuItem(
                             value: 'delete',
@@ -968,14 +976,14 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(16),
                   child: TextField(
                     controller: input,
                     decoration: InputDecoration(
-                      labelText: 'Search destination',
+                      labelText: AppStrings.of(context).searchTitle,
                       prefixIcon: Icon(Icons.search),
                       suffixIcon: IconButton(
-                        tooltip: 'Clear search',
+                        tooltip: AppStrings.of(context).searchClear,
                         icon: const Icon(Icons.close),
                         onPressed: () {
                           input.clear();
@@ -1024,7 +1032,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             return;
                           }
                           if (navigation != null || busy || rideStarting) {
-                            message('End navigation before editing a route.');
+                            message(AppStrings.of(context).rideEndNavigationFirst);
                             return;
                           }
                           command('center', p);
@@ -1057,7 +1065,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               ListTile(
                 title: Text(
                   route['name'].toString(),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 subtitle: Text(
                   '${route['route_type']} · ${km(route['distance_meters'])} · ${minutes(route['duration_seconds'])}',
@@ -1065,10 +1073,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               ),
               if (session['role'] != 'admin')
                 ListTile(
-                  leading: const Icon(Icons.play_arrow),
-                  title: const Text('Start ride'),
-                  subtitle: const Text(
-                    'Load route, choose a vehicle, and start navigation',
+                  leading: Icon(Icons.play_arrow),
+                  title: Text(AppStrings.of(context).rideStart),
+                  subtitle: Text(
+                    AppStrings.of(context).rideLoadPrompt,
                   ),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -1077,28 +1085,28 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 ),
               if (session['role'] != 'admin' && route['route_type'] == 'drawn')
                 ListTile(
-                  leading: const Icon(Icons.map_outlined),
-                  title: const Text('Open / edit drawn route'),
+                  leading: Icon(Icons.map_outlined),
+                  title: Text(AppStrings.of(context).routeOpen),
                   onTap: () {
                     Navigator.pop(ctx);
                     load(route);
                   },
                 )
               else
-                const ListTile(
+                ListTile(
                   leading: Icon(Icons.fiber_manual_record),
                   title: Text('Recorded track'),
                   subtitle: Text(
-                    'Original GPS track is kept separate from drawn routes.',
+                    AppStrings.of(context).recordSeparateNote,
                   ),
                 ),
               ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Rename'),
+                leading: Icon(Icons.edit),
+                title: Text(AppStrings.of(context).actionRename),
                 onTap: () async {
                   Navigator.pop(ctx);
                   final name = await nameDialog(
-                    'Rename route',
+                    AppStrings.of(context).routeRename,
                     route['name'].toString(),
                   );
                   if (name != null) {
@@ -1113,8 +1121,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.favorite_border),
-                title: const Text('Toggle favourite'),
+                leading: Icon(Icons.favorite_border),
+                title: Text(AppStrings.of(context).routeFavouriteToggle),
                 onTap: () async {
                   Navigator.pop(ctx);
                   try {
@@ -1127,8 +1135,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.share),
-                title: const Text('Share route'),
+                leading: Icon(Icons.share),
+                title: Text(AppStrings.of(context).routeShare),
                 onTap: () async {
                   Navigator.pop(ctx);
                   try {
@@ -1138,8 +1146,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Remove from recent routes'),
+                leading: Icon(Icons.delete_outline),
+                title: Text(AppStrings.of(context).routesRemoveRecent),
                 onTap: () async {
                   Navigator.pop(ctx);
                   try {
@@ -1149,8 +1157,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Delete route'),
+                leading: Icon(Icons.delete_outline),
+                title: Text(AppStrings.of(context).routeDelete),
                 onTap: () async {
                   Navigator.pop(ctx);
                   if (await confirm(
@@ -1190,7 +1198,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) {
           if (rideStarting) {
-            message('Starting navigation — please wait.');
+            message(AppStrings.of(context).rideStarting);
             return;
           }
           if (navigation != null) {
@@ -1218,32 +1226,32 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     if (page != 'home')
                       IconButton(
                         onPressed: () => changePage('home'),
-                        icon: const Icon(Icons.arrow_back),
+                        icon: Icon(Icons.arrow_back),
                       ),
-                    const Icon(Icons.route, color: Color(0xff10df9b), size: 34),
-                    const SizedBox(width: 10),
+                    Icon(Icons.route, color: Color(0xff10df9b), size: 34),
+                    SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         page == 'planner'
-                            ? 'Draw Route'
+                            ? AppStrings.of(context).drawTitle
                             : page == 'routes'
-                            ? 'Saved Routes'
+                            ? AppStrings.of(context).routesSavedTitle
                             : 'RouteOS',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Search places',
+                      tooltip: AppStrings.of(context).searchPlaces,
                       onPressed: searchSheet,
-                      icon: const Icon(Icons.search),
+                      icon: Icon(Icons.search),
                     ),
                     if (loggedIn && !authRequired)
                       IconButton(
-                        tooltip: 'Deliveries',
-                        icon: const Icon(Icons.local_shipping_outlined),
+                        tooltip: AppStrings.of(context).deliveriesTitle,
+                        icon: Icon(Icons.local_shipping_outlined),
                         onPressed: () => showDialog<void>(
                           context: context,
                           builder: (_) => Dialog.fullscreen(
@@ -1256,20 +1264,20 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                         ),
                       ),
                     IconButton(
-                      tooltip: 'Offline maps',
+                      tooltip: AppStrings.of(context).mapDownloads,
                       onPressed: () => command('maps.download'),
-                      icon: const Icon(Icons.download_for_offline_outlined),
+                      icon: Icon(Icons.download_for_offline_outlined),
                     ),
                     if (loggedIn)
                       IconButton(
-                        tooltip: 'Account',
+                        tooltip: AppStrings.of(context).tabAccount,
                         onPressed: () async {
                           if (authRequired) {
                             await login();
                             return;
                           }
                           if (await confirm(
-                            'Switch account?',
+                            AppStrings.of(context).loginSwitchAccount,
                             '${session['name']}',
                           )) {
                             try {
@@ -1290,20 +1298,20 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             } catch (_) {}
                           }
                         },
-                        icon: const Icon(Icons.account_circle_outlined),
+                        icon: Icon(Icons.account_circle_outlined),
                       ),
                   ],
                 ),
               ),
               if (signingIn)
-                const ListTile(
+                ListTile(
                   leading: SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(),
                   ),
                   title: Text(
-                    'Signing in… the server may take a minute to wake up.',
+                    AppStrings.of(context).loginSigningIn,
                   ),
                 ),
               if (authRequired && !signingIn)
@@ -1312,22 +1320,22 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                   title: Text(
                     tracking['state'] == 'auth_required'
                         ? tracking['message']?.toString() ??
-                              'Sign in to resume syncing.'
-                        : 'Session expired. Sign in to resume syncing.',
+                              AppStrings.of(context).loginNoToken
+                        : AppStrings.of(context).loginSessionExpired,
                   ),
                   trailing: TextButton(
                     onPressed: login,
-                    child: const Text('Sign in'),
+                    child: Text(AppStrings.of(context).actionSignIn),
                   ),
                 ),
               if (error != null)
                 Material(
-                  color: const Color(0xff213c3a),
+                  color: Color(0xff213c3a),
                   child: ListTile(
                     dense: true,
                     title: Text(error!),
                     trailing: IconButton(
-                      icon: const Icon(Icons.close),
+                      icon: Icon(Icons.close),
                       onPressed: () => setState(() => error = null),
                     ),
                   ),
@@ -1335,7 +1343,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               Expanded(
                 child: Stack(
                   children: [
-                    const Positioned.fill(child: NativeMap()),
+                    Positioned.fill(child: NativeMap()),
                     Positioned(
                       right: 12,
                       bottom: 18,
@@ -1344,23 +1352,23 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                         children: [
                           FloatingActionButton.small(
                             heroTag: 'plus',
-                            tooltip: 'Zoom in',
+                            tooltip: AppStrings.of(context).mapZoomIn,
                             onPressed: () => command('zoom', {'in': true}),
-                            child: const Icon(Icons.add),
+                            child: Icon(Icons.add),
                           ),
-                          const SizedBox(height: 8, width: 8),
+                          SizedBox(height: 8, width: 8),
                           FloatingActionButton.small(
                             heroTag: 'minus',
-                            tooltip: 'Zoom out',
+                            tooltip: AppStrings.of(context).mapZoomOut,
                             onPressed: () => command('zoom', {'in': false}),
-                            child: const Icon(Icons.remove),
+                            child: Icon(Icons.remove),
                           ),
-                          const SizedBox(height: 8, width: 8),
+                          SizedBox(height: 8, width: 8),
                           FloatingActionButton.small(
                             heroTag: 'gps',
-                            tooltip: 'My location',
+                            tooltip: AppStrings.of(context).mapMyLocation,
                             onPressed: () => locate(),
-                            child: const Icon(Icons.my_location),
+                            child: Icon(Icons.my_location),
                           ),
                         ],
                       ),
@@ -1379,29 +1387,29 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             child: Column(
                               children: [
                                 ListTile(
-                                  title: const Text('Active drivers'),
+                                  title: Text(AppStrings.of(context).adminActiveDrivers),
                                   subtitle: Text(
                                     '${activeRides.length} live rides',
                                   ),
                                   trailing: IconButton(
-                                    tooltip: 'Refresh live rides',
+                                    tooltip: AppStrings.of(context).adminRefreshRides,
                                     onPressed: pollAdmin,
-                                    icon: const Icon(Icons.refresh),
+                                    icon: Icon(Icons.refresh),
                                   ),
                                 ),
                                 Expanded(
                                   child: ListView(
                                     children: [
                                       if (activeRides.isEmpty)
-                                        const ListTile(
-                                          title: Text('No active rides'),
+                                        ListTile(
+                                          title: Text(AppStrings.of(context).adminNoRides),
                                           subtitle: Text(
-                                            'Drivers appear here when they start a ride.',
+                                            AppStrings.of(context).adminNoRidesHint,
                                           ),
                                         ),
                                       for (final ride in activeRides)
                                         ListTile(
-                                          leading: const Icon(
+                                          leading: Icon(
                                             Icons.circle,
                                             color: Color(0xff10df9b),
                                             size: 12,
@@ -1410,7 +1418,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                             '${ride['driver_name']} · ${ride['location_stale'] == true ? session['tracking_stale_label'] ?? '' : 'LIVE'}',
                                           ),
                                           subtitle: Text(
-                                            '${ride['route_name']}\n${ride['vehicle_number']} · GPS ${ride['location_recorded_at'] ?? 'not received'}',
+                                            '${ride['route_name']}\n${ride['vehicle_number']} · GPS ${ride['location_recorded_at'] ?? AppStrings.of(context).rideLocationMissing}',
                                           ),
                                           isThreeLine: true,
                                           onTap: ride['latitude'] == null
@@ -1428,14 +1436,14 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     if (page == 'routes' && loggedIn)
                       Positioned.fill(
                         child: ColoredBox(
-                          color: const Color(0xf5081219),
+                          color: Color(0xf5081219),
                           child: Column(
                             children: [
                               Padding(
-                                padding: const EdgeInsets.all(12),
+                                padding: EdgeInsets.all(12),
                                 child: TextField(
-                                  decoration: const InputDecoration(
-                                    hintText: 'Search saved routes',
+                                  decoration: InputDecoration(
+                                    hintText: AppStrings.of(context).routesSearch,
                                     prefixIcon: Icon(Icons.search),
                                   ),
                                   onChanged: (v) => setState(() => query = v),
@@ -1443,7 +1451,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                               ),
                               Wrap(
                                 spacing: 8,
-                                children: ['All', 'My Routes', 'Favourites']
+                                children: [AppStrings.of(context).routesFilterAll, AppStrings.of(context).routesTitle, AppStrings.of(context).routesFavourites]
                                     .map(
                                       (v) => ChoiceChip(
                                         label: Text(v),
@@ -1467,15 +1475,15 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                                 .contains(
                                                   query.toLowerCase(),
                                                 ) &&
-                                            (filter != 'My Routes' ||
+                                            (filter != AppStrings.of(context).routesTitle ||
                                                 r['recorder_id'] ==
                                                     session['id']) &&
-                                            (filter != 'Favourites' ||
+                                            (filter != AppStrings.of(context).routesFavourites ||
                                                 r['is_favorite'] == true),
                                       ))
                                         Card(
                                           child: ListTile(
-                                            leading: const Icon(
+                                            leading: Icon(
                                               Icons.route,
                                               color: Color(0xff10df9b),
                                             ),
@@ -1485,16 +1493,16 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                             ),
                                             isThreeLine: true,
                                             onTap: () => routeActions(r),
-                                            trailing: const Icon(
+                                            trailing: Icon(
                                               Icons.chevron_right,
                                             ),
                                           ),
                                         ),
                                       if (routes.isEmpty)
-                                        const Padding(
+                                        Padding(
                                           padding: EdgeInsets.all(24),
                                           child: Text(
-                                            'No saved routes yet. Plan or record your first route.',
+                                            AppStrings.of(context).routesEmpty,
                                           ),
                                         ),
                                     ],
@@ -1524,14 +1532,14 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             title: Text(
                               moving != null
                                   ? 'Tap the new position for point ${moving! + 1}'
-                                  : 'Tap to insert a point',
+                                  : AppStrings.of(context).pointInsertTap,
                             ),
                             trailing: IconButton(
                               onPressed: () => setState(() {
                                 moving = null;
                                 inserting = null;
                               }),
-                              icon: const Icon(Icons.close),
+                              icon: Icon(Icons.close),
                             ),
                           ),
                         ),
@@ -1558,20 +1566,20 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                               child: OutlinedButton(
                                 onPressed: () async {
                                   if (await confirm(
-                                    'Discard recording?',
-                                    'Stop the native recorder and discard the unsaved track.',
+                                    AppStrings.of(context).recordDiscardTitle,
+                                    AppStrings.of(context).recordDiscardHint,
                                   )) {
                                     await command('record.cancel');
                                   }
                                 },
-                                child: const Text('Discard'),
+                                child: Text(AppStrings.of(context).recordDiscard),
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            SizedBox(width: 12),
                             Expanded(
                               child: FilledButton(
                                 onPressed: () => command('record.stop'),
-                                child: const Text('Stop & save'),
+                                child: Text(AppStrings.of(context).recordStopSave),
                               ),
                             ),
                           ],
@@ -1598,59 +1606,59 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                         if (planner.points.length >= 4 && !landscape)
                           TextButton.icon(
                             onPressed: optimize,
-                            icon: const Icon(Icons.swap_vert),
-                            label: const Text('Optimize waypoint order'),
+                            icon: Icon(Icons.swap_vert),
+                            label: Text(AppStrings.of(context).drawOptimize),
                           ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             if (landscape && planner.points.length >= 4)
                               IconButton(
-                                tooltip: 'Optimize waypoint order',
+                                tooltip: AppStrings.of(context).drawOptimize,
                                 onPressed: rideStarting ? null : optimize,
-                                icon: const Icon(Icons.swap_vert),
+                                icon: Icon(Icons.swap_vert),
                               ),
                             IconButton(
-                              tooltip: 'Undo',
+                              tooltip: AppStrings.of(context).drawUndo,
                               onPressed: planner.canUndo && !rideStarting
                                   ? () {
                                       planner.undo();
                                       calculate();
                                     }
                                   : null,
-                              icon: const Icon(Icons.undo),
+                              icon: Icon(Icons.undo),
                             ),
                             IconButton(
-                              tooltip: 'Redo',
+                              tooltip: AppStrings.of(context).drawRedo,
                               onPressed: planner.canRedo && !rideStarting
                                   ? () {
                                       planner.redo();
                                       calculate();
                                     }
                                   : null,
-                              icon: const Icon(Icons.redo),
+                              icon: Icon(Icons.redo),
                             ),
                             IconButton(
-                              tooltip: 'Clear route',
+                              tooltip: AppStrings.of(context).drawClear,
                               onPressed: rideStarting
                                   ? null
                                   : () {
                                       planner.clear();
                                       calculate();
                                     },
-                              icon: const Icon(Icons.delete_sweep_outlined),
+                              icon: Icon(Icons.delete_sweep_outlined),
                             ),
                             IconButton(
-                              tooltip: 'Route points',
+                              tooltip: AppStrings.of(context).drawPointsList,
                               onPressed: rideStarting ? null : pointsSheet,
-                              icon: const Icon(Icons.format_list_numbered),
+                              icon: Icon(Icons.format_list_numbered),
                             ),
                             IconButton(
-                              tooltip: 'Use my location as point',
+                              tooltip: AppStrings.of(context).drawUseMyLocation,
                               onPressed: rideStarting
                                   ? null
                                   : () => locate(add: true),
-                              icon: const Icon(Icons.add_location_alt_outlined),
+                              icon: Icon(Icons.add_location_alt_outlined),
                             ),
                           ],
                         ),
@@ -1662,17 +1670,17 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                     planner.state == PlannerState.ready && !busy
                                     ? save
                                     : null,
-                                child: const Text('Save route'),
+                                child: Text(AppStrings.of(context).drawSave),
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            SizedBox(width: 12),
                             Expanded(
                               child: FilledButton(
                                 onPressed:
                                     planner.state == PlannerState.ready && !busy
                                     ? vehicle
                                     : null,
-                                child: const Text('Start navigation'),
+                                child: Text(AppStrings.of(context).drawStart),
                               ),
                             ),
                           ],
@@ -1684,8 +1692,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             Expanded(
                               child: FilledButton.icon(
                                 onPressed: () => command('record'),
-                                icon: const Icon(Icons.fiber_manual_record),
-                                label: const Text('Record route'),
+                                icon: Icon(Icons.fiber_manual_record),
+                                label: Text(AppStrings.of(context).drawRecord),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -1695,8 +1703,8 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                   setState(() => page = 'planner');
                                   if (planner.points.isNotEmpty) calculate();
                                 },
-                                icon: const Icon(Icons.edit_location_alt),
-                                label: const Text('Draw route'),
+                                icon: Icon(Icons.edit_location_alt),
+                                label: Text(AppStrings.of(context).drawEditRoute),
                               ),
                             ),
                           ],
@@ -1729,18 +1737,18 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     );
                   },
                   destinations: [
-                    const NavigationDestination(
+                    NavigationDestination(
                       icon: Icon(Icons.home_outlined),
-                      label: 'Home',
+                      label: AppStrings.of(context).tabHome,
                     ),
-                    const NavigationDestination(
+                    NavigationDestination(
                       icon: Icon(Icons.route),
-                      label: 'Routes',
+                      label: AppStrings.of(context).tabRoutes,
                     ),
                     if (!isAdmin)
-                      const NavigationDestination(
+                      NavigationDestination(
                         icon: Icon(Icons.map_outlined),
-                        label: 'Draw',
+                        label: AppStrings.of(context).tabDraw,
                       ),
                   ],
                 ),
@@ -1752,28 +1760,28 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   }
 
   Widget loginPanel() => ColoredBox(
-    color: const Color(0xee081219),
+    color: Color(0xee081219),
     child: Center(
       child: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Drive. Track. Deliver.',
+              Text(
+                AppStrings.of(context).loginHeadline,
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 12),
-              const Text('Your routes. Your road.'),
-              const SizedBox(height: 24),
-              FilledButton(onPressed: login, child: const Text('Sign in')),
+              SizedBox(height: 12),
+              Text(AppStrings.of(context).loginTagline),
+              SizedBox(height: 24),
+              FilledButton(onPressed: login, child: Text(AppStrings.of(context).actionSignIn)),
               TextButton(
                 onPressed: server,
-                child: const Text('Configure server'),
+                child: Text(AppStrings.of(context).loginConfigureServer),
               ),
               if (session['development'] == true) ...[
-                const Text('Development accounts'),
+                Text(AppStrings.of(context).loginDevelopmentAccounts),
                 for (final name in [
                   'D.B Cooper',
                   'Sukumara Kurup',
@@ -1868,17 +1876,17 @@ class NavigationStatusOverlay extends StatelessWidget {
               children: [
                 Text(
                   '${_minutes(value['duration_seconds'])} · ${_km(value['distance_meters'])} · ETA ${_eta(value['duration_seconds'])}\n${(value['speed'] as num? ?? 0).round()} km/h${(value['speed_limit'] as num? ?? -1) > 0 ? ' · Limit ${(value['speed_limit'] as num).round()}' : ''}',
-                  style: const TextStyle(fontSize: 20),
+                  style: TextStyle(fontSize: 20),
                 ),
                 if (value['tracking_message'] != null)
                   Text(
                     value['tracking_message'].toString(),
-                    style: const TextStyle(fontSize: 12),
+                    style: TextStyle(fontSize: 12),
                   ),
               ],
             ),
           ),
-          FilledButton(onPressed: onEndRide, child: const Text('End ride')),
+          FilledButton(onPressed: onEndRide, child: Text(AppStrings.of(context).rideEnd)),
         ],
       );
     },
@@ -1886,7 +1894,7 @@ class NavigationStatusOverlay extends StatelessWidget {
 
   static String _maneuver(dynamic value) {
     final turn = value?.toString();
-    if (turn == null || turn == 'NoTurn') return 'Follow the route';
+    if (turn == null || turn == 'NoTurn') return '';
     return turn.replaceAllMapped(
       RegExp(r'([a-z])([A-Z])'),
       (m) => '${m[1]} ${m[2]}',

@@ -1111,6 +1111,372 @@ abstract class AppStrings {
   /// In en, this message translates to:
   /// **'Refresh supermarkets'**
   String get shopRefresh;
+
+  /// No description provided for @tabAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get tabAccount;
+
+  /// No description provided for @routesFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get routesFilterAll;
+
+  /// No description provided for @routesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'My Routes'**
+  String get routesTitle;
+
+  /// No description provided for @routesSavedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved Routes'**
+  String get routesSavedTitle;
+
+  /// No description provided for @routesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved routes yet. Plan or record your first route.'**
+  String get routesEmpty;
+
+  /// No description provided for @routesSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search saved routes'**
+  String get routesSearch;
+
+  /// No description provided for @routesFavourites.
+  ///
+  /// In en, this message translates to:
+  /// **'Favourites'**
+  String get routesFavourites;
+
+  /// No description provided for @routesRemoveRecent.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from recent routes'**
+  String get routesRemoveRecent;
+
+  /// No description provided for @routeCalculateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not calculate this route. Check offline map coverage and retry.'**
+  String get routeCalculateFailed;
+
+  /// No description provided for @routeLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load this route. Check your connection and retry.'**
+  String get routeLoadFailed;
+
+  /// No description provided for @routeTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Route calculation timed out. Check regional maps and retry.'**
+  String get routeTimeout;
+
+  /// No description provided for @routeName.
+  ///
+  /// In en, this message translates to:
+  /// **'Route name'**
+  String get routeName;
+
+  /// No description provided for @routeDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete route'**
+  String get routeDelete;
+
+  /// No description provided for @routeRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename route'**
+  String get routeRename;
+
+  /// No description provided for @routeShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Share route'**
+  String get routeShare;
+
+  /// No description provided for @routeOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open / edit drawn route'**
+  String get routeOpen;
+
+  /// No description provided for @routeFollow.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow the route'**
+  String get routeFollow;
+
+  /// No description provided for @routeFavouriteToggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle favourite'**
+  String get routeFavouriteToggle;
+
+  /// No description provided for @routeSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Route saved and available to other drivers.'**
+  String get routeSaved;
+
+  /// No description provided for @routeShared.
+  ///
+  /// In en, this message translates to:
+  /// **'Route shared with RouteOS drivers.'**
+  String get routeShared;
+
+  /// No description provided for @drawOptimizeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimize waypoint order?'**
+  String get drawOptimizeTitle;
+
+  /// No description provided for @drawOrganicsLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Organic Maps supports 100 waypoints plus start and destination.'**
+  String get drawOrganicsLimit;
+
+  /// No description provided for @drawDriverOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Route drawing is available to drivers only.'**
+  String get drawDriverOnly;
+
+  /// No description provided for @drawMaxPointsReached.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum 102 route points reached.'**
+  String get drawMaxPointsReached;
+
+  /// No description provided for @pointDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete point'**
+  String get pointDelete;
+
+  /// No description provided for @pointInsertAfter.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert after'**
+  String get pointInsertAfter;
+
+  /// No description provided for @pointMoveOnMap.
+  ///
+  /// In en, this message translates to:
+  /// **'Move on map'**
+  String get pointMoveOnMap;
+
+  /// No description provided for @pointMoveEarlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Move earlier'**
+  String get pointMoveEarlier;
+
+  /// No description provided for @pointMoveLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Move later'**
+  String get pointMoveLater;
+
+  /// No description provided for @pointMoveTap.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap the new position for point'**
+  String get pointMoveTap;
+
+  /// No description provided for @pointInsertTap.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to insert a point'**
+  String get pointInsertTap;
+
+  /// No description provided for @pointEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit point'**
+  String get pointEdit;
+
+  /// No description provided for @pointLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Point {number} · {type}'**
+  String pointLabel(int number, String type);
+
+  /// No description provided for @mapMyLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'My location'**
+  String get mapMyLocation;
+
+  /// No description provided for @mapZoomIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom in'**
+  String get mapZoomIn;
+
+  /// No description provided for @mapZoomOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom out'**
+  String get mapZoomOut;
+
+  /// No description provided for @mapDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline maps'**
+  String get mapDownloads;
+
+  /// No description provided for @searchPlaces.
+  ///
+  /// In en, this message translates to:
+  /// **'Search places'**
+  String get searchPlaces;
+
+  /// No description provided for @vehicleSelect.
+  ///
+  /// In en, this message translates to:
+  /// **'Select vehicle'**
+  String get vehicleSelect;
+
+  /// No description provided for @rideStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start ride'**
+  String get rideStart;
+
+  /// No description provided for @rideEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'End ride'**
+  String get rideEnd;
+
+  /// No description provided for @rideEndTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'End this ride?'**
+  String get rideEndTitle;
+
+  /// No description provided for @rideWaitingGps.
+  ///
+  /// In en, this message translates to:
+  /// **'Ride active — waiting for GPS'**
+  String get rideWaitingGps;
+
+  /// No description provided for @rideWaitingGuidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for GPS guidance'**
+  String get rideWaitingGuidance;
+
+  /// No description provided for @rideStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting navigation — please wait.'**
+  String get rideStarting;
+
+  /// No description provided for @rideLiveTrackingNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Live tracking stops after RouteOS confirms the ride has ended.'**
+  String get rideLiveTrackingNote;
+
+  /// No description provided for @rideLoadPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Load route, choose a vehicle, and start navigation'**
+  String get rideLoadPrompt;
+
+  /// No description provided for @rideLocationMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'not received'**
+  String get rideLocationMissing;
+
+  /// No description provided for @rideEndNavigationFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'End navigation before editing a route.'**
+  String get rideEndNavigationFirst;
+
+  /// No description provided for @recordStopSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop & save'**
+  String get recordStopSave;
+
+  /// No description provided for @recordDiscard.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard'**
+  String get recordDiscard;
+
+  /// No description provided for @recordDiscardTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard recording?'**
+  String get recordDiscardTitle;
+
+  /// No description provided for @recordStopFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop or discard the recording first.'**
+  String get recordStopFirst;
+
+  /// No description provided for @recordDiscardHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop the native recorder and discard the unsaved track.'**
+  String get recordDiscardHint;
+
+  /// No description provided for @recordSeparateNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Original GPS track is kept separate from drawn routes.'**
+  String get recordSeparateNote;
+
+  /// No description provided for @recordProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording Route · {distance}'**
+  String recordProgress(String distance);
+
+  /// No description provided for @sessionRestoreFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not restore your session: {error}'**
+  String sessionRestoreFailed(String error);
+
+  /// No description provided for @screenClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen closed'**
+  String get screenClosed;
+
+  /// No description provided for @loginDevelopmentAccounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Development accounts'**
+  String get loginDevelopmentAccounts;
+
+  /// No description provided for @actionRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get actionRename;
+
+  /// No description provided for @adminRefreshRides.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh live rides'**
+  String get adminRefreshRides;
 }
 
 class _AppStringsDelegate extends LocalizationsDelegate<AppStrings> {

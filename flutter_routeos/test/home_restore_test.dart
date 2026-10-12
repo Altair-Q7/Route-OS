@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'helpers.dart';
 import 'package:routeos_shell/core/bridge.dart';
 import 'package:routeos_shell/home/home.dart';
 
@@ -32,7 +33,7 @@ void main() {
   });
 
   Future<void> showHome(WidgetTester tester) =>
-      tester.pumpWidget(const MaterialApp(home: RouteOsFlutterHome()));
+      tester.pumpWidget(wrapForTest(const RouteOsFlutterHome()));
 
   void emit(WidgetTester tester, String type, dynamic data) {
     tester.binding.channelBuffers.push(

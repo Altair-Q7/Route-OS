@@ -577,4 +577,202 @@ class AppStringsAr extends AppStrings {
 
   @override
   String get shopRefresh => 'تحديث أسواق السوبرماركت';
+
+  @override
+  String get tabAccount => 'الحساب';
+
+  @override
+  String get routesFilterAll => 'الكل';
+
+  @override
+  String get routesTitle => 'مساراتي';
+
+  @override
+  String get routesSavedTitle => 'المسارات المحفوظة';
+
+  @override
+  String get routesEmpty =>
+      'لا توجد مسارات محفوظة بعد. خطط أو سجّل مسارك الأول.';
+
+  @override
+  String get routesSearch => 'ابحث في المسارات المحفوظة';
+
+  @override
+  String get routesFavourites => 'المفضلة';
+
+  @override
+  String get routesRemoveRecent => 'إزالة من المسارات الأخيرة';
+
+  @override
+  String get routeCalculateFailed =>
+      'تعذّر حساب هذا المسار. تحقق من تغطية الخريطة دون اتصال وأعد المحاولة.';
+
+  @override
+  String get routeLoadFailed =>
+      'تعذّر تحميل هذا المسار. تحقق من اتصالك وأعد المحاولة.';
+
+  @override
+  String get routeTimeout =>
+      'انتهت مهلة حساب المسار. تحقق من الخرائط الإقليمية وأعد المحاولة.';
+
+  @override
+  String get routeName => 'اسم المسار';
+
+  @override
+  String get routeDelete => 'حذف المسار';
+
+  @override
+  String get routeRename => 'إعادة تسمية المسار';
+
+  @override
+  String get routeShare => 'مشاركة المسار';
+
+  @override
+  String get routeOpen => 'فتح / تعديل المسار المرسوم';
+
+  @override
+  String get routeFollow => 'اتبع المسار';
+
+  @override
+  String get routeFavouriteToggle => 'تبديل المفضلة';
+
+  @override
+  String get routeSaved => 'تم حفظ المسار وهو متاح للسائقين الآخرين.';
+
+  @override
+  String get routeShared => 'تمت مشاركة المسار مع سائقي RouteOS.';
+
+  @override
+  String get drawOptimizeTitle => 'هل تريد تحسين ترتيب نقاط التوقف؟';
+
+  @override
+  String get drawOrganicsLimit =>
+      'يدعم Organic Maps‏ ما يصل إلى 100 نقطة توقف إضافة إلى البداية والوجهة.';
+
+  @override
+  String get drawDriverOnly => 'رسم المسارات متاح للسائقين فقط.';
+
+  @override
+  String get drawMaxPointsReached =>
+      'تم بلوغ الحد الأقصى لنقاط المسار البالغة 102.';
+
+  @override
+  String get pointDelete => 'حذف النقطة';
+
+  @override
+  String get pointInsertAfter => 'إدراج بعد';
+
+  @override
+  String get pointMoveOnMap => 'نقل على الخريطة';
+
+  @override
+  String get pointMoveEarlier => 'نقل إلى الأمام';
+
+  @override
+  String get pointMoveLater => 'نقل إلى الخلف';
+
+  @override
+  String get pointMoveTap => 'انقر على الموضع الجديد للنقطة';
+
+  @override
+  String get pointInsertTap => 'انقر لإدراج نقطة';
+
+  @override
+  String get pointEdit => 'تعديل النقطة';
+
+  @override
+  String pointLabel(int number, String type) {
+    return 'نقطة $number · $type';
+  }
+
+  @override
+  String get mapMyLocation => 'موقعي';
+
+  @override
+  String get mapZoomIn => 'تكبير';
+
+  @override
+  String get mapZoomOut => 'تصغير';
+
+  @override
+  String get mapDownloads => 'الخرائط دون اتصال';
+
+  @override
+  String get searchPlaces => 'ابحث عن الأماكن';
+
+  @override
+  String get vehicleSelect => 'اختر المركبة';
+
+  @override
+  String get rideStart => 'بدء الرحلة';
+
+  @override
+  String get rideEnd => 'إنهاء الرحلة';
+
+  @override
+  String get rideEndTitle => 'هل تريد إنهاء هذه الرحلة؟';
+
+  @override
+  String get rideWaitingGps => 'الرحلة نشطة — في انتظار GPS';
+
+  @override
+  String get rideWaitingGuidance => 'في انتظار توجيه GPS';
+
+  @override
+  String get rideStarting => 'يبدأ التوجيه — يرجى الانتظار.';
+
+  @override
+  String get rideLiveTrackingNote =>
+      'يتوقف التتبع المباشر بعد تأكيد RouteOS انتهاء الرحلة.';
+
+  @override
+  String get rideLoadPrompt => 'حمّل المسار، اختر مركبة، وابدأ التوجيه';
+
+  @override
+  String get rideLocationMissing => 'لم يصل';
+
+  @override
+  String get rideEndNavigationFirst => 'أنهِ التوجيه قبل تعديل المسار.';
+
+  @override
+  String get recordStopSave => 'إيقاف وحفظ';
+
+  @override
+  String get recordDiscard => 'تجاهل';
+
+  @override
+  String get recordDiscardTitle => 'هل تريد تجاهل التسجيل؟';
+
+  @override
+  String get recordStopFirst => 'أوقف التسجيل أو تجاهله أولاً.';
+
+  @override
+  String get recordDiscardHint =>
+      'أوقف المسجّل الأصلي وتجاهل المسار غير المحفوظ.';
+
+  @override
+  String get recordSeparateNote =>
+      'يُحفظ مسار GPS الأصلي منفصلاً عن المسارات المرسومة.';
+
+  @override
+  String recordProgress(String distance) {
+    return 'جارٍ تسجيل المسار · $distance';
+  }
+
+  @override
+  String sessionRestoreFailed(String error) {
+    return 'تعذّرت استعادة جلستك: $error';
+  }
+
+  @override
+  String get screenClosed => 'أُغلقت الشاشة';
+
+  @override
+  String get loginDevelopmentAccounts => 'حسابات التطوير';
+
+  @override
+  String get actionRename => 'إعادة تسمية';
+
+  @override
+  String get adminRefreshRides => 'تحديث الرحلات النشطة';
 }
