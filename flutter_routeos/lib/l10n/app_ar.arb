@@ -227,5 +227,10 @@
   "screenClosed": "أُغلقت الشاشة",
   "loginDevelopmentAccounts": "حسابات التطوير",
   "actionRename": "إعادة تسمية",
-  "adminRefreshRides": "تحديث الرحلات النشطة"
+  "adminRefreshRides": "تحديث الرحلات النشطة",
+  "reportsTitle": "تقارير التسليم",
+  "reportsShortages": "النواقص والإخفاقات",
+  "reportsTotals": "الإجماليات حسب المنتج",
+  "reportsTrips": "الرحلات",
+  "reportsEmpty": "لا توجد عمليات تسليم مسجلة بعد."
 }

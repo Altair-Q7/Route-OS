@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/generated/app_localizations.dart';
 
+import 'delivery_reports.dart';
 import 'supermarket_directory.dart';
 import 'trip_builder.dart';
 
@@ -685,6 +686,17 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                         ),
                 icon: const Icon(Icons.storefront_outlined),
                 label: Text(AppStrings.of(context).shopTitle),
+              ),
+              OutlinedButton.icon(
+                onPressed: loading
+                    ? null
+                    : () => Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) => DeliveryReports(request: widget.request),
+                          ),
+                        ),
+                icon: const Icon(Icons.assessment_outlined),
+                label: Text(AppStrings.of(context).reportsTitle),
               ),
             ],
           ),

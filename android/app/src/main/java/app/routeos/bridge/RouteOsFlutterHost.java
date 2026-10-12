@@ -309,6 +309,7 @@ public final class RouteOsFlutterHost implements SearchListener, BookmarkManager
         case "routes" -> loadRoutes(result);
         case "deliveries" -> async(result, () -> RouteOsApi.getObject(activity, "/api/v1/deliveries"));
         case "supermarkets" -> async(result, () -> RouteOsApi.getObject(activity, "/api/v1/supermarkets"));
+        case "reports.deliveries" -> async(result, () -> RouteOsApi.getObject(activity, "/api/v1/reports/deliveries"));
         case "supermarket.create" -> async(result, () -> RouteOsApi.post(activity, "/api/v1/supermarkets", data));
         case "supermarket.update" -> async(result, () -> RouteOsApi.patch(activity,
             "/api/v1/supermarkets/" + data.getLong("id"), data));

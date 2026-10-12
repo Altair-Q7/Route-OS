@@ -847,6 +847,40 @@ class DeliveryIntegration:
                 db.commit()
                 return self.snapshot(db, db.execute("SELECT * FROM delivery_assignments WHERE id=?", (assignment_id,)).fetchone())
 
+        @app.get("/api/v1/reports/deliveries")
+        def delivery_report(me=Depends(current_user)):
+            """Delivery results for the admin, built on the client's own read model.
+
+            Rendering this screen and the customer's polling endpoint from the same
+            projection is what makes a check here a real check of their contract.
+            """
+            self.admin(me)
+            with closing(self.connection()) as db:
+                rows = db.execute("SELECT * FROM delivery_assignments ORDER BY id DESC LIMIT 200").fetchall()
+                trips = [self.client_trip(db, row) for row in rows]
+                totals = {}
+                for trip in trips:
+                    for stop in trip['stops']:
+                        for item in stop['items']:
+                            key = (item['product_name'], item['uom'])
+                            bucket = totals.setdefault(key, {
+                                'product_name': item['product_name'], 'uom': item['uom'],
+                                'planned_quantity': Decimal(0), 'delivered_quantity': Decimal(0)})
+                            bucket['planned_quantity'] += Decimal(str(item['planned_quantity']))
+                            bucket['delivered_quantity'] += Decimal(str(item['delivered_quantity']))
+                return {
+                    'trips': trips,
+                    'product_totals': [{**item, 'planned_quantity': str(item['planned_quantity']),
+                                        'delivered_quantity': str(item['delivered_quantity'])}
+                                       for item in totals.values()],
+                    'shortages': [
+                        {'trip': trip['trip'], 'customer': stop['customer'], 'reason': stop['reason'],
+                         'items': [item for item in stop['items']
+                                   if Decimal(str(item['delivered_quantity'])) < Decimal(str(item['planned_quantity']))]}
+                        for trip in trips for stop in trip['stops']
+                        if stop['status'] in ('partial', 'failed')],
+                }
+
         @app.get("/api/v1/deliveries/extras")
         def extras(me=Depends(current_user)):
             """Extra batter shops asked for, awaiting the next trip or reassignment."""

@@ -775,4 +775,19 @@ class AppStringsAr extends AppStrings {
 
   @override
   String get adminRefreshRides => 'تحديث الرحلات النشطة';
+
+  @override
+  String get reportsTitle => 'تقارير التسليم';
+
+  @override
+  String get reportsShortages => 'النواقص والإخفاقات';
+
+  @override
+  String get reportsTotals => 'الإجماليات حسب المنتج';
+
+  @override
+  String get reportsTrips => 'الرحلات';
+
+  @override
+  String get reportsEmpty => 'لا توجد عمليات تسليم مسجلة بعد.';
 }

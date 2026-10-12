@@ -780,4 +780,19 @@ class AppStringsEn extends AppStrings {
 
   @override
   String get adminRefreshRides => 'Refresh live rides';
+
+  @override
+  String get reportsTitle => 'Delivery reports';
+
+  @override
+  String get reportsShortages => 'Shortages and failures';
+
+  @override
+  String get reportsTotals => 'Totals by product';
+
+  @override
+  String get reportsTrips => 'Trips';
+
+  @override
+  String get reportsEmpty => 'No deliveries recorded yet.';
 }

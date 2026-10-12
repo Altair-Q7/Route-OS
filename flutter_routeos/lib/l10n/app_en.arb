@@ -432,5 +432,10 @@
   "screenClosed": "Screen closed",
   "loginDevelopmentAccounts": "Development accounts",
   "actionRename": "Rename",
-  "adminRefreshRides": "Refresh live rides"
+  "adminRefreshRides": "Refresh live rides",
+  "reportsTitle": "Delivery reports",
+  "reportsShortages": "Shortages and failures",
+  "reportsTotals": "Totals by product",
+  "reportsTrips": "Trips",
+  "reportsEmpty": "No deliveries recorded yet."
 }

@@ -784,4 +784,19 @@ class AppStringsMl extends AppStrings {
 
   @override
   String get adminRefreshRides => 'സജീവ റൈഡുകൾ പുതുക്കുക';
+
+  @override
+  String get reportsTitle => 'ഡെലിവറി റിപ്പോർട്ടുകൾ';
+
+  @override
+  String get reportsShortages => 'കുറവുകളും പരാജയങ്ങളും';
+
+  @override
+  String get reportsTotals => 'ഉൽപ്പന്നം അനുസരിച്ചുള്ള ആകെകൾ';
+
+  @override
+  String get reportsTrips => 'ട്രിപ്പുകൾ';
+
+  @override
+  String get reportsEmpty => 'ഇതുവരെ ഡെലിവറികൾ രേഖപ്പെടുത്തിയിട്ടില്ല.';
 }

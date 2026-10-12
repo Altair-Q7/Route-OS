@@ -1477,6 +1477,36 @@ abstract class AppStrings {
   /// In en, this message translates to:
   /// **'Refresh live rides'**
   String get adminRefreshRides;
+
+  /// No description provided for @reportsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivery reports'**
+  String get reportsTitle;
+
+  /// No description provided for @reportsShortages.
+  ///
+  /// In en, this message translates to:
+  /// **'Shortages and failures'**
+  String get reportsShortages;
+
+  /// No description provided for @reportsTotals.
+  ///
+  /// In en, this message translates to:
+  /// **'Totals by product'**
+  String get reportsTotals;
+
+  /// No description provided for @reportsTrips.
+  ///
+  /// In en, this message translates to:
+  /// **'Trips'**
+  String get reportsTrips;
+
+  /// No description provided for @reportsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No deliveries recorded yet.'**
+  String get reportsEmpty;
 }
 
 class _AppStringsDelegate extends LocalizationsDelegate<AppStrings> {

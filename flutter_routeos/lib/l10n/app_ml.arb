@@ -227,5 +227,10 @@
   "screenClosed": "സ്ക്രീൻ അടച്ചു",
   "loginDevelopmentAccounts": "ഡെവലപ്മെന്റ് അക്കൗണ്ടുകൾ",
   "actionRename": "പേര് മാറ്റുക",
-  "adminRefreshRides": "സജീവ റൈഡുകൾ പുതുക്കുക"
+  "adminRefreshRides": "സജീവ റൈഡുകൾ പുതുക്കുക",
+  "reportsTitle": "ഡെലിവറി റിപ്പോർട്ടുകൾ",
+  "reportsShortages": "കുറവുകളും പരാജയങ്ങളും",
+  "reportsTotals": "ഉൽപ്പന്നം അനുസരിച്ചുള്ള ആകെകൾ",
+  "reportsTrips": "ട്രിപ്പുകൾ",
+  "reportsEmpty": "ഇതുവരെ ഡെലിവറികൾ രേഖപ്പെടുത്തിയിട്ടില്ല."
 }
