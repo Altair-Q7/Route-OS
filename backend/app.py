@@ -223,6 +223,10 @@ def initialize_database() -> None:
         db.execute("""CREATE TABLE IF NOT EXISTS login_attempts (
             name TEXT NOT NULL, client TEXT NOT NULL, attempts INTEGER NOT NULL,
             first_attempt REAL NOT NULL, PRIMARY KEY(name, client))""")
+        db.execute("""CREATE TABLE IF NOT EXISTS client_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL,
+            expires_at TEXT, revoked_at TEXT)""")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_auth_token ON users(auth_token)")
         initialize_deliveries(db)
         db.execute(
@@ -408,6 +412,12 @@ class LoginIn(BaseModel):
     password: str | None = Field(default=None, max_length=256)
 
 
+class ClientKeyIn(BaseModel):
+    """A read-only key for the customer's reporting system."""
+    label: str = Field(min_length=1, max_length=120)
+    expires_in_days: int | None = Field(default=None, gt=0, le=3650)
+
+
 class TrackPoint(BaseModel):
     """Single GPS point in a track recording"""
     latitude: float = Field(ge=-90, le=90)
@@ -569,16 +579,43 @@ def current_user(x_routeos_token: str | None = Header(default=None), authorizati
 
 
 def external_client(x_routeos_client_key: str | None = Header(default=None)) -> dict:
-    """Read-only server-to-server access for the client's own reporting system.
+    """Read-only server-to-server access for the customer's reporting system.
 
     The key never grants ride or delivery mutation; those stay behind `current_user`.
+    A key provisioned through the environment is accepted too, so a deployment can
+    start before anyone has issued one from the admin panel.
     """
-    expected = os.getenv("ROUTEOS_CLIENT_API_KEY", "")
-    if not expected:
-        raise HTTPException(status_code=503, detail="client API access is not configured")
-    if not x_routeos_client_key or not hmac.compare_digest(x_routeos_client_key, expected):
+    if not x_routeos_client_key:
         raise HTTPException(status_code=401, detail="invalid client API key")
-    return {"role": "client"}
+    configured = os.getenv("ROUTEOS_CLIENT_API_KEY", "")
+    if configured and hmac.compare_digest(x_routeos_client_key, configured):
+        return {"role": "client", "id": None, "source": "environment"}
+    with closing(connection()) as db:
+        row = db.execute(
+            """SELECT id, label FROM client_keys WHERE revoked_at IS NULL
+                AND (expires_at IS NULL OR expires_at>?) AND token_hash=?""",
+            (utc_now(), hashlib.sha256(x_routeos_client_key.encode()).hexdigest()),
+        ).fetchone()
+        if row is None and not configured and not db.execute("SELECT 1 FROM client_keys").fetchone():
+            # No key has ever been issued: say so rather than blaming the one they sent.
+            raise HTTPException(status_code=503, detail="client API access is not configured")
+    if row is None:
+        raise HTTPException(status_code=401, detail="invalid client API key")
+    return {"role": "client", "id": row["id"], "label": row["label"], "source": "database"}
+
+
+def issue_client_key(label: str, days: int | None = None) -> str:
+    """Mint a read-only key for the customer's system. Only the hash is stored."""
+    token = new_token()
+    expires = datetime.now(timezone.utc) + timedelta(days=days) if days else None
+    with closing(connection()) as db:
+        db.execute(
+            """INSERT INTO client_keys(label, token_hash, created_at, expires_at)
+                VALUES (?,?,?,?)""",
+            (label.strip(), hashlib.sha256(token.encode()).hexdigest(), utc_now(),
+             expires.isoformat() if expires else None))
+        db.commit()
+    return token
 
 
 def caller_owns(me: dict, driver_id: int) -> None:
@@ -1339,6 +1376,49 @@ def driver_active_ride(driver_id: int, me: dict = Depends(current_user)) -> dict
     if row is None:
         raise HTTPException(status_code=404, detail="no active ride")
     return dict(row)
+
+
+@app.post("/api/v1/client-keys", status_code=201)
+def create_client_key(payload: ClientKeyIn, me: dict = Depends(current_user)) -> dict:
+    """Issue a read-only key for the customer's reporting system.
+
+    The key is returned once and never again; only its hash is kept.
+    """
+    if me["role"] != "admin":
+        raise HTTPException(status_code=403, detail="admin access required")
+    label = payload.label.strip()
+    if not label:
+        raise HTTPException(status_code=422, detail="name this key so it can be recognised later")
+    token = issue_client_key(label, payload.expires_in_days)
+    with closing(connection()) as db:
+        row = db.execute("SELECT id, label, created_at, expires_at FROM client_keys WHERE token_hash=?",
+                         (hashlib.sha256(token.encode()).hexdigest(),)).fetchone()
+    return {**dict(row), "key": token,
+            "warning": "This key is shown once. Store it now; it cannot be retrieved again."}
+
+
+@app.get("/api/v1/client-keys")
+def list_client_keys(me: dict = Depends(current_user)) -> dict:
+    if me["role"] != "admin":
+        raise HTTPException(status_code=403, detail="admin access required")
+    with closing(connection()) as db:
+        rows = db.execute("""SELECT id, label, created_at, expires_at, revoked_at FROM client_keys
+            ORDER BY id DESC""").fetchall()
+    return {"keys": [dict(row) for row in rows]}
+
+
+@app.delete("/api/v1/client-keys/{key_id}")
+def revoke_client_key(key_id: int, me: dict = Depends(current_user)) -> dict:
+    """Revoke a key immediately. The customer's system stops working at once."""
+    if me["role"] != "admin":
+        raise HTTPException(status_code=403, detail="admin access required")
+    with closing(connection()) as db:
+        cursor = db.execute("UPDATE client_keys SET revoked_at=? WHERE id=? AND revoked_at IS NULL",
+                            (utc_now(), key_id))
+        db.commit()
+    if not cursor.rowcount:
+        raise HTTPException(status_code=404, detail="client key not found or already revoked")
+    return {"revoked": key_id}
 
 
 @app.get("/api/v1/drivers")
