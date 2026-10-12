@@ -16,10 +16,25 @@ X-RouteOS-Client-Key: <your key>
 ```
 
 The key is read-only. It cannot create trips, confirm deliveries or change any
-data. Without a valid key the API returns `401`; if the key has not been
-provisioned on the server it returns `503`.
+data. Without a valid key the API returns `401`.
 
 Use HTTPS in production and send the key only over that connection.
+
+### Getting a key
+
+A RouteOS admin issues keys for you; you cannot create your own. Each key is
+shown **once** when it is created and cannot be retrieved again, so store it
+safely at that moment.
+
+Keys can be given an expiry date, and more than one can be active at once so you
+can replace one without interrupting your polling:
+
+1. Ask for a second key.
+2. Configure it in your system.
+3. Confirm your system is reading results with it.
+4. Ask for the first key to be revoked.
+
+A revoked or expired key stops working immediately and returns `401`.
 
 ## Polling for results
 
