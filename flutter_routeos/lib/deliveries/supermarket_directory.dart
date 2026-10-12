@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/generated/app_localizations.dart';
 
 typedef DirectoryRequest =
     Future<dynamic> Function(String method, [Map<String, dynamic> data]);
@@ -55,10 +56,10 @@ class _SupermarketDirectoryState extends State<SupermarketDirectory> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Supermarkets'),
+      title: Text(AppStrings.of(context).shopTitle),
       actions: [
         IconButton(
-          tooltip: 'Refresh supermarkets',
+          tooltip: AppStrings.of(context).shopRefresh,
           onPressed: _loading ? null : _load,
           icon: const Icon(Icons.refresh),
         ),
@@ -67,7 +68,7 @@ class _SupermarketDirectoryState extends State<SupermarketDirectory> {
     floatingActionButton: FloatingActionButton.extended(
       onPressed: _loading ? null : () => _edit(),
       icon: const Icon(Icons.add),
-      label: const Text('Add supermarket'),
+      label: Text(AppStrings.of(context).shopAdd),
     ),
     body: Column(
       children: [
@@ -95,7 +96,7 @@ class _SupermarketDirectoryState extends State<SupermarketDirectory> {
                   title: Text(shop['name'].toString()),
                   subtitle: Text(
                     order.isEmpty
-                        ? 'No usual allocation yet'
+                        ? AppStrings.of(context).shopNoOrder
                         : order
                             .map((item) =>
                                 '${item['quantity']} ${item['uom']} ${item['product_name']}')
@@ -103,7 +104,7 @@ class _SupermarketDirectoryState extends State<SupermarketDirectory> {
                   ),
                   trailing: shop['active'] == 1
                       ? null
-                      : const Chip(label: Text('Inactive')),
+                      : Chip(label: Text(AppStrings.of(context).shopInactive)),
                   onTap: () => _edit(shop),
                 ),
               );
@@ -169,7 +170,7 @@ class _ShopDialogState extends State<_ShopDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.shop == null ? 'Add supermarket' : 'Edit supermarket'),
+    title: Text(widget.shop == null ? AppStrings.of(context).shopAdd : AppStrings.of(context).shopEdit),
     scrollable: true,
     content: Form(
       key: _form,
@@ -179,14 +180,14 @@ class _ShopDialogState extends State<_ShopDialog> {
           TextFormField(
             controller: _name,
             maxLength: 140,
-            decoration: const InputDecoration(labelText: 'Supermarket name'),
+            decoration: InputDecoration(labelText: AppStrings.of(context).shopName),
             validator: (value) =>
-                (value ?? '').trim().isEmpty ? 'Enter the name' : null,
+                (value ?? '').trim().isEmpty ? AppStrings.of(context).shopNameRequired : null,
           ),
           TextFormField(
             controller: _address,
             maxLength: 500,
-            decoration: const InputDecoration(labelText: 'Address'),
+            decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderAddress),
           ),
           Row(
             children: [
@@ -197,11 +198,14 @@ class _ShopDialogState extends State<_ShopDialog> {
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: const InputDecoration(labelText: 'Latitude'),
-                  validator: (value) => _coordinate(value, limit: 90),
+                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderLatitude),
+                  validator: (value) => validateCoordinate(value,
+                      limit: 90,
+                      missing: AppStrings.of(context).tripBuilderCoordinateMissing,
+                      outOfRange: AppStrings.of(context).tripBuilderCoordinateRange),
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: TextFormField(
                   controller: _longitude,
@@ -209,24 +213,26 @@ class _ShopDialogState extends State<_ShopDialog> {
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: const InputDecoration(labelText: 'Longitude'),
-                  validator: (value) => _coordinate(value, limit: 180),
+                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderLongitude),
+                  validator: (value) => validateCoordinate(value,
+                      limit: 180,
+                      missing: AppStrings.of(context).tripBuilderCoordinateMissing,
+                      outOfRange: AppStrings.of(context).tripBuilderCoordinateRange),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Usual allocation',
+              AppStrings.of(context).shopUsualOrder,
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'Applied automatically when a trip includes this shop. Leave empty '
-            'if the shop does not take a fixed amount.',
+          SizedBox(height: 4),
+          Text(
+            AppStrings.of(context).shopUsualOrderHint,
           ),
           const SizedBox(height: 8),
           for (var i = 0; i < _order.length; i++)
@@ -238,29 +244,29 @@ class _ShopDialogState extends State<_ShopDialog> {
                     flex: 3,
                     child: _OrderField(
                       initial: _order[i]['product_name']!,
-                      label: 'Product',
+                      label: AppStrings.of(context).tripBuilderProduct,
                       onChanged: (value) => _order[i]['product_name'] = value,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: _OrderField(
                       initial: _order[i]['quantity']!,
-                      label: 'Qty',
+                      label: AppStrings.of(context).tripBuilderQuantity,
                       numeric: true,
                       onChanged: (value) => _order[i]['quantity'] = value,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: _OrderField(
                       initial: _order[i]['uom']!,
-                      label: 'Unit',
+                      label: AppStrings.of(context).tripBuilderUnit,
                       onChanged: (value) => _order[i]['uom'] = value,
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Remove product',
+                    tooltip: AppStrings.of(context).tripBuilderRemoveProduct,
                     icon: const Icon(Icons.close),
                     onPressed: () => setState(() => _order.removeAt(i)),
                   ),
@@ -276,7 +282,7 @@ class _ShopDialogState extends State<_ShopDialog> {
               }),
             ),
             icon: const Icon(Icons.add),
-            label: const Text('Add product'),
+            label: Text(AppStrings.of(context).tripBuilderAddProduct),
           ),
         ],
       ),
@@ -284,11 +290,11 @@ class _ShopDialogState extends State<_ShopDialog> {
     actions: [
       TextButton(
         onPressed: () => Navigator.pop(context, false),
-        child: const Text('Cancel'),
+        child: Text(AppStrings.of(context).actionCancel),
       ),
       FilledButton(
         onPressed: _submit,
-        child: const Text('Save'),
+        child: Text(AppStrings.of(context).actionSave),
       ),
     ],
   );
@@ -338,14 +344,21 @@ class _ShopDialogState extends State<_ShopDialog> {
     }
   }
 
-  static String? _coordinate(String? value, {required double limit}) {
-    final text = (value ?? '').trim();
-    if (text.isEmpty) return null; // a shop may be saved before it is mapped
-    final parsed = double.tryParse(text);
-    if (parsed == null || !parsed.isFinite) return 'Enter a coordinate';
-    if (parsed < -limit || parsed > limit) return 'Out of range';
-    return null;
-  }
+}
+
+/// A shop may be saved before it has coordinates, so an empty value is allowed.
+String? validateCoordinate(
+  String? value, {
+  required double limit,
+  required String missing,
+  required String outOfRange,
+}) {
+  final text = (value ?? '').trim();
+  if (text.isEmpty) return null;
+  final parsed = double.tryParse(text);
+  if (parsed == null || !parsed.isFinite) return missing;
+  if (parsed < -limit || parsed > limit) return outOfRange;
+  return null;
 }
 
 class _OrderField extends StatelessWidget {

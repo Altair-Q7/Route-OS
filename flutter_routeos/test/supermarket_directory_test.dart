@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'helpers.dart';
 import 'package:routeos_shell/deliveries/supermarket_directory.dart';
 
 void main() {
@@ -26,7 +27,7 @@ void main() {
     Future<dynamic> Function(String, [Map<String, dynamic>]) request,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(home: SupermarketDirectory(request: request)),
+      wrapForTest(SupermarketDirectory(request: request)),
     );
     await tester.pumpAndSettle();
   }
@@ -67,13 +68,11 @@ void main() {
     tester,
   ) async {
     Map<String, dynamic>? created;
-    var shopId = 0;
     await open(
       tester,
       (method, [data = const {}]) async {
         if (method == 'supermarket.create') {
           created = data;
-          shopId++;
           return shop('Metro Fresh');
         }
         return listing([shop('Metro Fresh')]);

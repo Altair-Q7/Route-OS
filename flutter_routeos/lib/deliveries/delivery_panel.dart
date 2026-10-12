@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/generated/app_localizations.dart';
 
 import 'supermarket_directory.dart';
 import 'trip_builder.dart';
@@ -87,9 +88,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
     final drivers = catalog['drivers'] as List;
     if (trips.isEmpty || drivers.isEmpty) {
       setState(
-        () => notice =
-            'Create a submitted delivery trip with a driver '
-            'in ERPNext, and a driver account in RouteOS, first.',
+        () => notice = AppStrings.of(context).deliveriesErpEmpty,
       );
       return;
     }
@@ -99,7 +98,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
-          title: const Text('Assign ERPNext delivery'),
+          title: Text(AppStrings.of(context).deliveriesAssignErpTitle),
           content: SizedBox(
             width: 400,
             child: Column(
@@ -125,8 +124,8 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                 ),
                 DropdownButtonFormField<int>(
                   initialValue: driver,
-                  decoration: const InputDecoration(
-                    labelText: 'Matching RouteOS driver',
+                  decoration: InputDecoration(
+                    labelText: AppStrings.of(context).deliveriesMatchingDriver,
                   ),
                   items: [
                     for (final item in drivers)
@@ -139,10 +138,9 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                     if (value != null) update(() => driver = value);
                   },
                 ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Check the driver carefully. This links their accounts; '
-                  'existing delivery confirmations will not be reset.',
+                SizedBox(height: 12),
+                Text(
+                  AppStrings.of(context).deliveriesDriverWarning,
                 ),
               ],
             ),
@@ -150,7 +148,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(AppStrings.of(context).actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
@@ -182,12 +180,12 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
         builder: (context, update) => AlertDialog(
           title: Text(
             status == 'delivered'
-                ? 'Confirm delivered?'
+                ? AppStrings.of(context).confirmTitleDelivered
                 : status == 'partial'
-                ? 'Record partial delivery?'
+                ? AppStrings.of(context).confirmTitlePartial
                 : status == 'failed'
-                ? 'Record failed delivery?'
-                : 'Record arrival?',
+                ? AppStrings.of(context).confirmTitleFailed
+                : AppStrings.of(context).confirmTitleArrived,
           ),
           scrollable: true,
           content: Form(
@@ -200,8 +198,8 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                   'GPS arrival alone does not confirm delivery. Final outcomes cannot be overwritten.',
                 ),
                 if (recordsProducts && products.isEmpty)
-                  const Text(
-                    'No products assigned. Ask the admin to add the products and quantities first.',
+                  Text(
+                    AppStrings.of(context).confirmNoProducts,
                   ),
                 if (recordsProducts)
                   for (final item in products)
@@ -231,7 +229,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                           return 'Enter 0 to $planned, with up to 3 decimal places';
                         }
                         if (status == 'delivered' && qty != planned) {
-                          return 'For a shortage, cancel and choose partial delivery';
+                          return AppStrings.of(context).confirmUsePartial;
                         }
                         return null;
                       },
@@ -247,9 +245,9 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                         decimal: true,
                       ),
                       decoration: InputDecoration(
-                        labelText: 'Extra this shop asked for next trip',
+                        labelText: AppStrings.of(context).confirmExtraLabel,
                         helperText:
-                            'Recorded only. Nothing extra is handed over now.',
+                            AppStrings.of(context).confirmExtraHint,
                       ),
                       validator: (value) {
                         final text = (value ?? '').trim();
@@ -261,7 +259,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                             !RegExp(
                               r'^(?:[0-9]+(?:\.[0-9]{1,3})?|\.[0-9]{1,3})$',
                             ).hasMatch(text)) {
-                          return 'Enter a positive quantity with up to 3 decimals';
+                          return AppStrings.of(context).confirmExtraPositive;
                         }
                         return null;
                       },
@@ -273,11 +271,11 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                     maxLength: 500,
                     decoration: InputDecoration(
                       labelText: status == 'partial'
-                          ? 'Reason for shortage'
-                          : 'Why did delivery fail?',
+                          ? AppStrings.of(context).confirmPartialReason
+                          : AppStrings.of(context).confirmFailedReason,
                     ),
                     validator: (value) => (value ?? '').trim().isEmpty
-                        ? 'A reason is required'
+                        ? AppStrings.of(context).confirmReasonRequired
                         : null,
                     onChanged: (value) => update(() => reason = value.trim()),
                   ),
@@ -287,7 +285,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(AppStrings.of(context).actionCancel),
             ),
             FilledButton(
               onPressed: recordsProducts && products.isEmpty
@@ -297,7 +295,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                         Navigator.pop(context, true);
                       }
                     },
-              child: const Text('Confirm'),
+              child: Text(AppStrings.of(context).actionConfirm),
             ),
           ],
         ),
@@ -337,7 +335,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
     await perform(() async {
       await widget.request('delivery.extras.resolve', {
         'ids': extra['ids'],
-        'note': 'Planned into a later trip',
+        'note': AppStrings.of(context).deliveriesExtraNote,
       });
       await load();
       if (mounted) {
@@ -357,7 +355,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
           stop,
     ];
     if (pending.length < 2) {
-      setState(() => notice = 'Add at least two unconfirmed shops before moving batter.');
+      setState(() => notice = AppStrings.of(context).transferNeedsTwoStops);
       return;
     }
     var from = pending.first;
@@ -374,19 +372,18 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, update) => AlertDialog(
-          title: const Text('Move batter between shops'),
+          title: Text(AppStrings.of(context).transferTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Batter a shop will not take can go to another shop on this trip '
-                'instead of being left over. The driver still hands over only the plan.',
+              Text(
+                AppStrings.of(context).transferHint,
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: from['id'],
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Take from'),
+                decoration: InputDecoration(labelText: AppStrings.of(context).transferFrom),
                 items: [
                   for (final stop in pending)
                     DropdownMenuItem(
@@ -404,7 +401,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
               DropdownButtonFormField<String>(
                 initialValue: to['id'],
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Give to'),
+                decoration: InputDecoration(labelText: AppStrings.of(context).transferTo),
                 items: [
                   for (final stop in pending)
                     DropdownMenuItem(
@@ -420,7 +417,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
               DropdownButtonFormField<String>(
                 initialValue: chosen['product_name'].toString(),
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Product'),
+                decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderProduct),
                 items: [
                   for (final item in products)
                     DropdownMenuItem(
@@ -451,20 +448,20 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: Text(AppStrings.of(context).actionCancel),
             ),
             FilledButton(
               onPressed: () {
                 final amount = double.tryParse(quantity.text.trim());
                 if (amount == null || amount <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Enter a positive quantity')),
+                    SnackBar(content: Text(AppStrings.of(context).transferPositive)),
                   );
                   return;
                 }
                 Navigator.pop(ctx, true);
               },
-              child: const Text('Move'),
+              child: Text(AppStrings.of(context).transferMove),
             ),
           ],
         ),
@@ -505,7 +502,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
-          title: const Text('Assign products and quantities'),
+          title: Text(AppStrings.of(context).deliveriesAssignProductsTitle),
           scrollable: true,
           content: Form(
             key: form,
@@ -514,9 +511,8 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Examples: Milk in litres, Batter in kg, Curd in packets. '
-                    'Use the same unit when the driver confirms delivery.',
+                  Text(
+                    AppStrings.of(context).deliveriesAssignHint,
                   ),
                   for (int i = 0; i < rows.length; i++)
                     Padding(
@@ -530,7 +526,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                               labelText: 'Product ${i + 1}',
                             ),
                             validator: (value) => (value ?? '').trim().isEmpty
-                                ? 'Enter a product name'
+                                ? AppStrings.of(context).tripBuilderProduct
                                 : null,
                             onChanged: (value) =>
                                 rows[i]['product_name'] = value.trim(),
@@ -540,13 +536,13 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
-                            decoration: const InputDecoration(
-                              labelText: 'Assigned quantity',
+                            decoration: InputDecoration(
+                              labelText: AppStrings.of(context).tripBuilderQuantity,
                             ),
                             validator: (value) {
                               final qty = num.tryParse(value ?? '');
                               return qty == null || !qty.isFinite || qty <= 0
-                                  ? 'Enter a positive quantity'
+                                  ? AppStrings.of(context).transferPositive
                                   : null;
                             },
                             onChanged: (value) =>
@@ -555,8 +551,8 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                           TextFormField(
                             initialValue: rows[i]['uom'],
                             maxLength: 40,
-                            decoration: const InputDecoration(
-                              labelText: 'Unit (L, kg, packets, etc.)',
+                            decoration: InputDecoration(
+                              labelText: AppStrings.of(context).deliveriesUnitLabel,
                             ),
                             validator: (value) => (value ?? '').trim().isEmpty
                                 ? 'Enter a unit'
@@ -576,12 +572,12 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                               'uom': '',
                             }),
                           ),
-                    child: const Text('Add product'),
+                    child: Text(AppStrings.of(context).tripBuilderAddProduct),
                   ),
                   if (rows.length > 1)
                     TextButton(
                       onPressed: () => update(() => rows.removeLast()),
-                      child: const Text('Remove last product'),
+                      child: Text(AppStrings.of(context).deliveriesRemoveLast),
                     ),
                 ],
               ),
@@ -590,7 +586,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(AppStrings.of(context).actionCancel),
             ),
             FilledButton(
               onPressed: () {
@@ -614,10 +610,10 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Deliveries'),
+      title: Text(AppStrings.of(context).deliveriesTitle),
       actions: [
         IconButton(
-          tooltip: 'Refresh deliveries',
+          tooltip: AppStrings.of(context).deliveriesRefresh,
           onPressed: loading ? null : () => perform(load),
           icon: const Icon(Icons.refresh),
         ),
@@ -652,12 +648,12 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                         }
                       },
                 icon: const Icon(Icons.add),
-                label: const Text('Create trip'),
+                label: Text('Create trip'),
               ),
               FilledButton.icon(
                 onPressed: loading ? null : () => perform(importTrip),
                 icon: const Icon(Icons.sync_alt),
-                label: const Text('Assign ERPNext trip'),
+                label: Text(AppStrings.of(context).deliveriesAssignErp),
               ),
               OutlinedButton(
                 onPressed: loading
@@ -671,12 +667,12 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                             () => notice = result['queued'] == true
                                 ? 'Sync queued. It runs within 30 seconds; refresh to see the result.'
                                 : result['busy'] == true
-                                ? 'Sync is already running.'
+                                ? AppStrings.of(context).deliveriesSyncBusy
                                 : '${result['synced']} synced, ${result['failed']} failed. Failed updates are kept for retry.',
                           );
                         }
                       }),
-                child: const Text('Sync to ERPNext'),
+                child: Text(AppStrings.of(context).deliveriesSyncErp),
               ),
               OutlinedButton.icon(
                 onPressed: loading
@@ -688,7 +684,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                           ),
                         ),
                 icon: const Icon(Icons.storefront_outlined),
-                label: const Text('Supermarkets'),
+                label: Text(AppStrings.of(context).shopTitle),
               ),
             ],
           ),
@@ -701,11 +697,10 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                   'Extra requested by shops',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const Text(
-                  'Drivers handed over only the plan. Build these into a later trip, '
-                  'or give them to another shop so nothing is left over.',
+                Text(
+                  AppStrings.of(context).deliveriesExtraHint,
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 for (final extra in extras)
                   Card(
                     child: ListTile(
@@ -715,23 +710,22 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                       ),
                       subtitle: Text(
                         extra['requests'] == 1
-                            ? 'Recorded once'
+                            ? AppStrings.of(context).deliveriesExtraRecorded
                             : 'Recorded ${extra['requests']} times',
                       ),
                       trailing: TextButton(
                         onPressed: loading ? null : () => resolveExtras(extra),
-                        child: const Text('Planned'),
+                        child: Text('Planned'),
                       ),
                     ),
                   ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
               ],
               if (assignments.isEmpty && !loading)
-                const ListTile(
+                ListTile(
                   title: Text('No delivery assignments'),
                   subtitle: Text(
-                    'An admin can create a trip here, or import an ERPNext '
-                    'delivery trip. Drivers only see their own assignments.',
+                    AppStrings.of(context).deliveriesEmptyHint,
                   ),
                 ),
               for (final assignment in assignments)
@@ -769,10 +763,10 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                                     });
                                     await load();
                                   }),
-                            child: const Text('Link my current ride'),
+                            child: Text(AppStrings.of(context).deliveriesLinkRide),
                           ),
                         if (assignment['ride_id'] == null)
-                          const Text(
+                          Text(
                             'Driver: start a saved route using the ERP vehicle number, then link the ride here.',
                           ),
                         if ((assignment['surplus'] as List? ?? []).isNotEmpty &&
@@ -793,7 +787,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                                       : () => perform(
                                             () => transfer(assignment),
                                           ),
-                                  child: const Text('Move between shops'),
+                                  child: Text(AppStrings.of(context).deliveriesMoveBatter),
                                 ),
                               ],
                             ),
@@ -830,7 +824,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                                               stop as Map,
                                             ),
                                           ),
-                                    child: const Text('Assign products'),
+                                    child: Text(AppStrings.of(context).deliveriesAssignProducts),
                                   ),
                                 if ((stop['reason'] as String).isNotEmpty)
                                   Text('Reason: ${stop['reason']}'),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'helpers.dart';
 import 'package:routeos_shell/deliveries/delivery_panel.dart';
 
 void main() {
@@ -85,8 +86,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
+      wrapForTest(DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -117,8 +117,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 0),
+      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -146,8 +145,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 0),
+      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -171,8 +169,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
+      wrapForTest(DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -202,8 +199,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
       ),
     );
     await tester.pumpAndSettle();
@@ -263,8 +259,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
+      wrapForTest(DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -293,8 +288,7 @@ void main() {
       }
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+        wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
         ),
       );
       await tester.pumpAndSettle();
@@ -334,8 +328,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
       ),
     );
     await tester.pumpAndSettle();
@@ -361,8 +354,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
       ),
     );
     await tester.pumpAndSettle();
@@ -427,8 +419,7 @@ void main() {
       }
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DeliveryPanel(
+        wrapForTest(DeliveryPanel(
             request: request,
             isAdmin: false,
             activeRideId: 3,

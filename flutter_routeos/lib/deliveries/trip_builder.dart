@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/generated/app_localizations.dart';
 
 typedef TripBuilderRequest =
     Future<dynamic> Function(String method, [Map<String, dynamic> data]);
@@ -132,7 +133,7 @@ class _TripBuilderState extends State<TripBuilder> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Create trip')),
+    appBar: AppBar(title: Text('Create trip')),
     body: Form(
       key: _form,
       child: Column(
@@ -144,18 +145,18 @@ class _TripBuilderState extends State<TripBuilder> {
               children: [
                 TextFormField(
                   controller: _reference,
-                  decoration: const InputDecoration(
-                    labelText: 'Trip reference',
-                    helperText: 'For example SAP-TRIP-1042. Reusing it never duplicates a trip.',
+                  decoration: InputDecoration(
+                    labelText: AppStrings.of(context).tripBuilderReference,
+                    helperText: AppStrings.of(context).tripBuilderReferenceHint,
                   ),
                   validator: (value) => (value ?? '').trim().isEmpty
-                      ? 'Enter a trip reference'
+                      ? AppStrings.of(context).tripBuilderTripReferenceRequired
                       : null,
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                   initialValue: _driverId,
-                  decoration: const InputDecoration(labelText: 'Driver'),
+                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderDriver),
                   items: [
                     for (final driver in _drivers)
                       DropdownMenuItem(
@@ -166,20 +167,20 @@ class _TripBuilderState extends State<TripBuilder> {
                   onChanged: _saving ? null : (value) => setState(() => _driverId = value),
                   validator: (value) => value == null ? 'Choose a driver' : null,
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
                 TextFormField(
                   controller: _vehicle,
-                  decoration: const InputDecoration(
-                    labelText: 'Vehicle number',
-                    helperText: 'The driver must start their ride with this exact vehicle.',
+                  decoration: InputDecoration(
+                    labelText: AppStrings.of(context).tripBuilderVehicle,
+                    helperText: AppStrings.of(context).tripBuilderVehicleHint,
                   ),
                   validator: (value) => (value ?? '').trim().isEmpty
-                      ? 'Enter the vehicle number'
+                      ? AppStrings.of(context).tripBuilderVehicleRequired
                       : null,
                 ),
-                const SizedBox(height: 20),
+                SizedBox(height: 20),
                 Text(
-                  'Supermarkets',
+                  AppStrings.of(context).shopTitle,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
@@ -204,14 +205,13 @@ class _TripBuilderState extends State<TripBuilder> {
                 OutlinedButton.icon(
                   onPressed: _saving ? null : _addStop,
                   icon: const Icon(Icons.add),
-                  label: const Text('Add supermarket'),
+                  label: Text(AppStrings.of(context).shopAdd),
                 ),
                 if (_stops.any((stop) => stop.products.isEmpty))
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.only(top: 12),
                     child: Text(
-                      'Every supermarket needs at least one product and quantity, '
-                      'otherwise the driver cannot confirm the delivery.',
+                      AppStrings.of(context).tripBuilderStopWithoutProducts,
                     ),
                   ),
               ],
@@ -310,7 +310,7 @@ class _StopDialogState extends State<_StopDialog> {
           TextFormField(
             controller: _customer,
             maxLength: 140,
-            decoration: const InputDecoration(labelText: 'Supermarket name'),
+            decoration: InputDecoration(labelText: AppStrings.of(context).shopName),
             validator: (value) => (value ?? '').trim().isEmpty
                 ? 'Enter the supermarket name'
                 : null,
@@ -318,7 +318,7 @@ class _StopDialogState extends State<_StopDialog> {
           TextFormField(
             controller: _address,
             maxLength: 500,
-            decoration: const InputDecoration(labelText: 'Address'),
+            decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderAddress),
           ),
           Row(
             children: [
@@ -329,11 +329,11 @@ class _StopDialogState extends State<_StopDialog> {
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: const InputDecoration(labelText: 'Latitude'),
+                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderLatitude),
                   validator: (value) => _coordinate(value, limit: 90),
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: TextFormField(
                   controller: _longitude,
@@ -341,17 +341,17 @@ class _StopDialogState extends State<_StopDialog> {
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: const InputDecoration(labelText: 'Longitude'),
+                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderLongitude),
                   validator: (value) => _coordinate(value, limit: 180),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Products to deliver',
+              AppStrings.of(context).tripBuilderProducts,
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
@@ -365,31 +365,31 @@ class _StopDialogState extends State<_StopDialog> {
                     flex: 3,
                     child: TextFormField(
                       initialValue: _products[i].name,
-                      decoration: const InputDecoration(labelText: 'Product'),
+                      decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderProduct),
                       onChanged: (value) => _products[i].name = value,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: TextFormField(
                       initialValue: _products[i].quantity,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(labelText: 'Qty'),
+                      decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderQuantity),
                       onChanged: (value) => _products[i].quantity = value,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: TextFormField(
                       initialValue: _products[i].unit,
-                      decoration: const InputDecoration(labelText: 'Unit'),
+                      decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderUnit),
                       onChanged: (value) => _products[i].unit = value,
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Remove product',
+                    tooltip: AppStrings.of(context).tripBuilderRemoveProduct,
                     icon: const Icon(Icons.close),
                     onPressed: () => setState(() => _products.removeAt(i)),
                   ),
@@ -403,7 +403,7 @@ class _StopDialogState extends State<_StopDialog> {
               ),
             ),
             icon: const Icon(Icons.add),
-            label: const Text('Add product'),
+            label: Text(AppStrings.of(context).tripBuilderAddProduct),
           ),
         ],
       ),
@@ -411,7 +411,7 @@ class _StopDialogState extends State<_StopDialog> {
     actions: [
       TextButton(
         onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
+        child: Text(AppStrings.of(context).actionCancel),
       ),
       FilledButton(
         onPressed: () {
@@ -434,15 +434,15 @@ class _StopDialogState extends State<_StopDialog> {
           _products = [for (final product in validProduct) product];
           _save();
         },
-        child: const Text('Save stop'),
+        child: Text(AppStrings.of(context).tripBuilderSaveStop),
       ),
     ],
   );
 
   String? _coordinate(String? value, {required double limit}) {
     final parsed = double.tryParse((value ?? '').trim());
-    if (parsed == null || !parsed.isFinite) return 'Enter a coordinate';
-    if (parsed < -limit || parsed > limit) return 'Out of range';
+    if (parsed == null || !parsed.isFinite) return AppStrings.of(context).tripBuilderCoordinateMissing;
+    if (parsed < -limit || parsed > limit) return AppStrings.of(context).tripBuilderCoordinateRange;
     return null;
   }
 }

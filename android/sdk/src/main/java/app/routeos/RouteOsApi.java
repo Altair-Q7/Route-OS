@@ -390,7 +390,7 @@ public final class RouteOsApi {
     }
   }
 
-  private static JSONObject patch(@NonNull Context context, String path, JSONObject body) throws Exception {
+  public static JSONObject patch(@NonNull Context context, String path, JSONObject body) throws Exception {
     return requestWithBody(context, "PATCH", path, body);
   }
 

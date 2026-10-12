@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'helpers.dart';
 import 'package:routeos_shell/deliveries/trip_builder.dart';
 
 void main() {
@@ -25,7 +26,7 @@ void main() {
     Future<dynamic> Function(String, [Map<String, dynamic>]) request,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(home: TripBuilder(request: request)),
+      wrapForTest(TripBuilder(request: request)),
     );
     await tester.pumpAndSettle();
   }

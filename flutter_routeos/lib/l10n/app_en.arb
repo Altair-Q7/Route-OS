@@ -1,0 +1,351 @@
+{
+  "@@locale": "en",
+  "appTitle": "RouteOS",
+  "@appTitle": {
+    "description": "Product name. Not translated."
+  },
+  "actionSignIn": "Sign in",
+  "actionSignOut": "Sign out",
+  "actionCancel": "Cancel",
+  "actionConfirm": "Confirm",
+  "actionSave": "Save",
+  "actionRetry": "Retry",
+  "actionRefresh": "Refresh",
+  "actionDelete": "Delete",
+  "actionAdd": "Add",
+  "actionEdit": "Edit",
+  "loginTitle": "Sign in to RouteOS",
+  "loginAccountName": "Account name",
+  "loginPassword": "Password",
+  "loginTagline": "Your routes. Your road.",
+  "loginHeadline": "Drive. Track. Deliver.",
+  "loginSigningIn": "Signing in… the server may take a minute to wake up.",
+  "loginSessionExpired": "Session expired. Sign in to resume syncing.",
+  "loginNoToken": "Missing saved token. Sign in to resume syncing.",
+  "loginConfigureServer": "Configure server",
+  "loginServerTitle": "RouteOS server URL (local or HTTPS)",
+  "loginServerTitleHttps": "RouteOS server HTTPS URL",
+  "loginServerConfigured": "Server configured.",
+  "loginSwitchAccount": "Switch account?",
+  "tabHome": "Home",
+  "tabRoutes": "Routes",
+  "tabDraw": "Draw",
+  "drawTitle": "Draw Route",
+  "drawPoints": "{count} points · {state}",
+  "@drawPoints": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "drawUndo": "Undo",
+  "drawRedo": "Redo",
+  "drawClear": "Clear route",
+  "drawPointsList": "Route points",
+  "drawUseMyLocation": "Use my location as point",
+  "drawSave": "Save route",
+  "drawStart": "Start navigation",
+  "drawOptimize": "Optimize waypoint order",
+  "drawRecord": "Record route",
+  "drawEditRoute": "Draw route",
+  "drawMaxPoints": "Maximum 100 waypoints plus start and destination.",
+  "pointStart": "Start",
+  "pointVia": "Via",
+  "pointDestination": "Destination",
+  "searchTitle": "Search destination",
+  "searchHint": "Search offline places and addresses. Download the regional map for local results.",
+  "searchClear": "Clear search",
+  "deliveriesTitle": "Deliveries",
+  "deliveriesCreateTrip": "Create trip",
+  "deliveriesAssignErp": "Assign ERPNext trip",
+  "deliveriesSyncErp": "Sync to ERPNext",
+  "deliveriesSupermarkets": "Supermarkets",
+  "deliveriesEmpty": "No delivery assignments",
+  "deliveriesEmptyHint": "An admin can create a trip here, or import an ERPNext delivery trip. Drivers only see their own assignments.",
+  "deliveriesLinkRide": "Link my current ride",
+  "deliveriesMoveBatter": "Move between shops",
+  "deliveriesStillToHandOver": "Still to hand over: {items}",
+  "@deliveriesStillToHandOver": {
+    "placeholders": {
+      "items": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesAssignProducts": "Assign products",
+  "deliveriesExtraTitle": "Extra requested by shops",
+  "deliveriesExtraHint": "Drivers handed over only the plan. Build these into a later trip, or give them to another shop so nothing is left over.",
+  "deliveriesExtraRecorded": "Recorded once",
+  "deliveriesExtraRecordedMany": "Recorded {count} times",
+  "@deliveriesExtraRecordedMany": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "deliveriesExtraPlanned": "Planned",
+  "deliveriesExtraResolved": "{shop} no longer waiting on {amount} {unit} {product}.",
+  "@deliveriesExtraResolved": {
+    "placeholders": {
+      "shop": {
+        "type": "String"
+      },
+      "amount": {
+        "type": "String"
+      },
+      "unit": {
+        "type": "String"
+      },
+      "product": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmTitleDelivered": "Confirm delivered?",
+  "confirmTitlePartial": "Record partial delivery?",
+  "confirmTitleFailed": "Record failed delivery?",
+  "confirmTitleArrived": "Record arrival?",
+  "confirmGpsNote": "GPS arrival alone does not confirm delivery. Final outcomes cannot be overwritten.",
+  "confirmNoProducts": "No products assigned. Ask the admin to add the products and quantities first.",
+  "confirmDeliveredLabel": "{product} delivered ({unit})",
+  "@confirmDeliveredLabel": {
+    "placeholders": {
+      "product": {
+        "type": "String"
+      },
+      "unit": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmAssigned": "Assigned: {quantity} {unit}",
+  "@confirmAssigned": {
+    "placeholders": {
+      "quantity": {
+        "type": "String"
+      },
+      "unit": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmExtraLabel": "Extra this shop asked for next trip",
+  "confirmExtraHint": "Recorded only. Nothing extra is handed over now.",
+  "confirmExtraPositive": "Enter a positive quantity with up to 3 decimals",
+  "confirmPartialReason": "Reason for shortage",
+  "confirmFailedReason": "Why did delivery fail?",
+  "confirmReasonRequired": "A reason is required",
+  "confirmUsePartial": "For a shortage, cancel and choose partial delivery",
+  "confirmQuantityRange": "Enter 0 to {planned}, with up to 3 decimal places",
+  "@confirmQuantityRange": {
+    "placeholders": {
+      "planned": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmDeliveredSummary": "{product}: {delivered} / {planned} {unit} delivered",
+  "@confirmDeliveredSummary": {
+    "placeholders": {
+      "product": {
+        "type": "String"
+      },
+      "delivered": {
+        "type": "String"
+      },
+      "planned": {
+        "type": "String"
+      },
+      "unit": {
+        "type": "String"
+      }
+    }
+  },
+  "tripBuilderTitle": "Create trip",
+  "tripBuilderReference": "Trip reference",
+  "tripBuilderReferenceHint": "For example SAP-TRIP-1042. Reusing it never duplicates a trip.",
+  "tripBuilderDriver": "Driver",
+  "tripBuilderVehicle": "Vehicle number",
+  "tripBuilderVehicleHint": "The driver must start their ride with this exact vehicle.",
+  "tripBuilderSupermarkets": "Supermarkets",
+  "tripBuilderAddSupermarket": "Add supermarket",
+  "tripBuilderStopTitle": "Supermarket {number}",
+  "@tripBuilderStopTitle": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "tripBuilderShopName": "Supermarket name",
+  "tripBuilderAddress": "Address",
+  "tripBuilderLatitude": "Latitude",
+  "tripBuilderLongitude": "Longitude",
+  "tripBuilderProducts": "Products to deliver",
+  "tripBuilderAddProduct": "Add product",
+  "tripBuilderRemoveProduct": "Remove product",
+  "tripBuilderProduct": "Product",
+  "tripBuilderQuantity": "Qty",
+  "tripBuilderUnit": "Unit",
+  "tripBuilderSaveStop": "Save stop",
+  "tripBuilderStopNeedsProduct": "Add at least one product so the driver can confirm the delivery",
+  "tripBuilderProductIncomplete": "Each product needs a name, a positive quantity and a unit",
+  "tripBuilderStopWithoutProducts": "Every supermarket needs at least one product and quantity, otherwise the driver cannot confirm the delivery.",
+  "tripBuilderCreate": "Create trip",
+  "tripBuilderCreated": "Trip created and assigned to the driver.",
+  "tripBuilderCoordinateRange": "Out of range",
+  "tripBuilderCoordinateMissing": "Enter a coordinate",
+  "tripBuilderTripSaved": "Trip created and assigned to the driver.",
+  "transferTitle": "Move batter between shops",
+  "transferHint": "Batter a shop will not take can go to another shop on this trip instead of being left over. The driver still hands over only the plan.",
+  "transferFrom": "Take from",
+  "transferTo": "Give to",
+  "transferProduct": "Product",
+  "transferProductOption": "{product} (planned {planned} {unit})",
+  "@transferProductOption": {
+    "placeholders": {
+      "product": {
+        "type": "String"
+      },
+      "planned": {
+        "type": "String"
+      },
+      "unit": {
+        "type": "String"
+      }
+    }
+  },
+  "transferQuantity": "How much to move ({unit})",
+  "@transferQuantity": {
+    "placeholders": {
+      "unit": {
+        "type": "String"
+      }
+    }
+  },
+  "transferMove": "Move",
+  "transferPositive": "Enter a positive quantity",
+  "transferNeedsTwoStops": "Add at least two unconfirmed shops before moving batter.",
+  "shopTitle": "Supermarkets",
+  "shopAdd": "Add supermarket",
+  "shopEdit": "Edit supermarket",
+  "shopName": "Supermarket name",
+  "shopAddress": "Address",
+  "shopLatitude": "Latitude",
+  "shopLongitude": "Longitude",
+  "shopUsualOrder": "Usual allocation",
+  "shopUsualOrderHint": "Applied automatically when a trip includes this shop. Leave empty if the shop does not take a fixed amount.",
+  "shopInactive": "Inactive",
+  "shopNoOrder": "No usual allocation yet",
+  "shopOrderSummary": "{quantity} {unit} {product}",
+  "@shopOrderSummary": {
+    "placeholders": {
+      "quantity": {
+        "type": "String"
+      },
+      "unit": {
+        "type": "String"
+      },
+      "product": {
+        "type": "String"
+      }
+    }
+  },
+  "shopProductIncomplete": "Each product needs a name, a positive quantity and a unit",
+  "shopNameRequired": "Enter the name",
+  "adminActiveDrivers": "Active drivers",
+  "adminLiveRides": "{count} live rides",
+  "@adminLiveRides": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminNoRides": "No active rides",
+  "adminNoRidesHint": "Drivers appear here when they start a ride.",
+  "stateStart": "Start",
+  "stateVia": "Via",
+  "stateDestination": "Destination",
+  "statePending": "Pending",
+  "stateArrived": "Arrived",
+  "stateDelivered": "Delivered",
+  "statePartial": "Partial",
+  "stateFailed": "Failed",
+  "deliveriesErpEmpty": "Create a submitted delivery trip with a driver in ERPNext, and a driver account in RouteOS, first.",
+  "deliveriesAssignErpTitle": "Assign ERPNext delivery",
+  "deliveriesMatchingDriver": "Matching RouteOS driver",
+  "deliveriesDriverWarning": "Check the driver carefully. This links their accounts; existing delivery confirmations will not be reset.",
+  "deliveriesExtraNote": "Planned into a later trip",
+  "deliveriesAssignProductsTitle": "Assign products and quantities",
+  "deliveriesAssignHint": "Examples: Milk in litres, Batter in kg, Curd in packets. Use the same unit when the driver confirms delivery.",
+  "deliveriesUnitLabel": "Unit (L, kg, packets, etc.)",
+  "deliveriesRemoveLast": "Remove last product",
+  "deliveriesSyncQueued": "Sync queued. It runs within 30 seconds; refresh to see the result.",
+  "deliveriesSyncBusy": "Sync is already running.",
+  "deliveriesSyncCounts": "{synced} synced, {failed} failed. Failed updates are kept for retry.",
+  "@deliveriesSyncCounts": {
+    "placeholders": {
+      "synced": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      }
+    }
+  },
+  "deliveriesLastGps": "Last GPS: {latitude}, {longitude}",
+  "@deliveriesLastGps": {
+    "placeholders": {
+      "latitude": {
+        "type": "String"
+      },
+      "longitude": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesRecordedAt": "Recorded: {time}",
+  "@deliveriesRecordedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesRide": "Ride: {status}",
+  "@deliveriesRide": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesLinkHint": "Driver: start a saved route using the ERP vehicle number, then link the ride here.",
+  "deliveriesNote": "Delivery Note: {note}",
+  "@deliveriesNote": {
+    "placeholders": {
+      "note": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesGpsNote": "GPS arrival alone does not confirm delivery. Final outcomes cannot be overwritten.",
+  "tripBuilderCreateFailed": "Could not create the trip: {error}",
+  "@tripBuilderCreateFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "tripBuilderTripReferenceRequired": "Enter a trip reference",
+  "tripBuilderVehicleRequired": "Enter the vehicle number",
+  "deliveriesRefresh": "Refresh deliveries",
+  "shopRefresh": "Refresh supermarkets"
+}
