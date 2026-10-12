@@ -86,6 +86,7 @@ def test_extra_request_is_recorded_without_raising_the_delivered_quantity(standa
     pending = client.get("/api/v1/deliveries/extras", headers=admin).json()["extras"]
     assert len(pending) == 1
     assert pending[0] == {'ids': [pending[0]['ids'][0]], 'customer': 'Metro Fresh',
+                          'supermarket_id': pending[0]['supermarket_id'],
                           'product_name': 'Idli Batter', 'uom': 'packet',
                           'quantity': '3', 'requests': 1}
 
@@ -192,7 +193,7 @@ def test_an_extra_request_never_changes_what_the_client_reads(standalone):
     assert [(i["product_name"], i["uom"], i["planned_quantity"], i["delivered_quantity"])
             for i in trip["stops"][0]["items"]] == [
                 ("Dosa Batter", "kg", "25", "25"), ("Idli Batter", "packet", "5", "5")]
-    assert set(trip["stops"][0]) == {"id", "customer", "address_text", "latitude",
+    assert set(trip["stops"][0]) == {"id", "supermarket_id", "customer", "address_text", "latitude",
                                      "longitude", "status", "reason", "confirmed_at", "items"}
 
 

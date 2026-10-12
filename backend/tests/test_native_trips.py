@@ -1,5 +1,6 @@
 """Native (ERPNext-free) trip creation, read-only client access and ERP isolation."""
 from contextlib import closing
+import json
 from urllib.parse import quote
 
 import pytest
@@ -203,8 +204,8 @@ def test_native_trip_never_syncs_to_erpnext(native, monkeypatch):
     assert routeos_app.delivery_integration.sync() == {"synced": 0, "failed": 0, "busy": False}
     assert calls == []
     with closing(routeos_app.connection()) as db:
-        row = db.execute("SELECT site, erp_driver FROM delivery_assignments").fetchone()
-    assert row["site"] == "native" and row["erp_driver"] == ""
+        row = db.execute("SELECT source, site, erp_driver FROM delivery_assignments").fetchone()
+    assert row["source"] == "native" and row["site"] is None and row["erp_driver"] is None
 
 
 def test_erp_sync_error_leaves_the_app_working_without_erpnext(native, monkeypatch):
@@ -245,7 +246,7 @@ def test_client_response_hides_erp_sync_internals(native):
     assert set(trip) == {"id", "trip", "status", "driver_id", "driver_name", "vehicle",
                          "created_at", "updated_at", "ride", "location", "stops",
                          "product_totals"}
-    assert set(trip["stops"][0]) == {"id", "customer", "address_text", "latitude",
+    assert set(trip["stops"][0]) == {"id", "supermarket_id", "customer", "address_text", "latitude",
                                      "longitude", "status", "reason", "confirmed_at", "items"}
     assert set(trip["stops"][0]["items"][0]) == {"product_name", "uom",
                                                  "planned_quantity", "delivered_quantity"}
@@ -329,6 +330,42 @@ def test_existing_rows_get_a_change_timestamp_on_migration(native):
         db.commit()
         row = db.execute("SELECT updated_at,created_at FROM delivery_assignments").fetchone()
     assert row["updated_at"] == row["created_at"]
+
+
+def test_a_legacy_database_migrates_without_losing_deliveries(native, tmp_path):
+    """Trips built before the supermarket table existed must survive the upgrade."""
+    client, admin, driver, _ = native
+    assignment = client.post("/api/v1/deliveries/trips", headers=admin, json=trip_body(driver["id"])).json()
+
+    # Recreate the pre-upgrade shape: no source column, site held the sentinel.
+    with closing(routeos_app.connection()) as db:
+        db.executescript("""
+            DROP TABLE delivery_assignments;
+            CREATE TABLE delivery_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, site TEXT NOT NULL, trip TEXT NOT NULL,
+                driver_id INTEGER NOT NULL REFERENCES users(id), erp_driver TEXT NOT NULL,
+                ride_id INTEGER UNIQUE REFERENCES rides(id), vehicle TEXT, departure_time TEXT,
+                stops TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
+                synced_revision INTEGER NOT NULL DEFAULT 0, last_sync TEXT, last_error TEXT,
+                attempts INTEGER NOT NULL DEFAULT 0, next_attempt TEXT, created_at TEXT NOT NULL);
+        """)
+        stops = json.dumps([{"id": "STOP-1", "customer": "Metro Fresh", "status": "pending",
+                             "reason": "", "items": [], "latitude": 9.93, "longitude": 76.27}])
+        db.execute("""INSERT INTO delivery_assignments
+            (site,trip,driver_id,erp_driver,vehicle,stops,created_at) VALUES (?,?,?,?,?,?,?)""",
+            ("native", assignment["trip"], driver["id"], "", "KL-07-AX-1234", stops, "2026-09-01T00:00:00+00:00"))
+        db.commit()
+        erp.initialize(db)
+        db.commit()
+        row = db.execute("SELECT * FROM delivery_assignments").fetchone()
+
+    assert row["source"] == "native"
+    assert row["site"] is None and row["erp_driver"] is None
+    assert row["trip"] == assignment["trip"]
+    # The shop named on an old stop becomes a directory entry and is linked back.
+    assert json.loads(row["stops"])[0]["supermarket_id"] is not None
+    shops = client.get("/api/v1/supermarkets", headers=admin).json()["supermarkets"]
+    assert [shop["name"] for shop in shops] == ["Metro Fresh"]
 
 
 def test_driver_sees_only_own_native_trip_and_admin_sees_all(native):
