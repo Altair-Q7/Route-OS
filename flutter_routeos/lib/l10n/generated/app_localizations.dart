@@ -686,6 +686,12 @@ abstract class AppStrings {
   /// **'Remove product'**
   String get tripBuilderRemoveProduct;
 
+  /// No description provided for @tripBuilderRemoveStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove stop'**
+  String get tripBuilderRemoveStop;
+
   /// No description provided for @tripBuilderProduct.
   ///
   /// In en, this message translates to:
@@ -907,6 +913,54 @@ abstract class AppStrings {
   /// In en, this message translates to:
   /// **'Active drivers'**
   String get adminActiveDrivers;
+
+  /// No description provided for @adminTrackingSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{active} active · {live} live'**
+  String adminTrackingSummary(int active, int live);
+
+  /// No description provided for @adminLive.
+  ///
+  /// In en, this message translates to:
+  /// **'LIVE'**
+  String get adminLive;
+
+  /// No description provided for @adminDriverFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Driver'**
+  String get adminDriverFallback;
+
+  /// No description provided for @adminTimeNow.
+  ///
+  /// In en, this message translates to:
+  /// **'now'**
+  String get adminTimeNow;
+
+  /// No description provided for @adminSecondsAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}s ago'**
+  String adminSecondsAgo(int count);
+
+  /// No description provided for @adminMinutesAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}m ago'**
+  String adminMinutesAgo(int count);
+
+  /// No description provided for @adminHoursAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}h ago'**
+  String adminHoursAgo(int count);
+
+  /// No description provided for @adminSpeedKmh.
+  ///
+  /// In en, this message translates to:
+  /// **'{speed} km/h'**
+  String adminSpeedKmh(int speed);
 
   /// No description provided for @adminLiveRides.
   ///
@@ -1142,6 +1196,12 @@ abstract class AppStrings {
   /// **'No saved routes yet. Plan or record your first route.'**
   String get routesEmpty;
 
+  /// No description provided for @routesNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No routes match your search or filter.'**
+  String get routesNoMatches;
+
   /// No description provided for @routesSearch.
   ///
   /// In en, this message translates to:
@@ -1189,6 +1249,24 @@ abstract class AppStrings {
   /// In en, this message translates to:
   /// **'Delete route'**
   String get routeDelete;
+
+  /// No description provided for @routeDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete \"{name}\"?'**
+  String routeDeleteTitle(String name);
+
+  /// No description provided for @routeDeleteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This removes the route from RouteOS for everyone. Completed ride history is preserved.'**
+  String get routeDeleteHint;
+
+  /// No description provided for @routeRecordedTrack.
+  ///
+  /// In en, this message translates to:
+  /// **'Recorded track'**
+  String get routeRecordedTrack;
 
   /// No description provided for @routeRename.
   ///
@@ -1471,6 +1549,149 @@ abstract class AppStrings {
   /// In en, this message translates to:
   /// **'Rename'**
   String get actionRename;
+
+  /// No description provided for @actionAssign.
+  ///
+  /// In en, this message translates to:
+  /// **'Assign'**
+  String get actionAssign;
+
+  /// No description provided for @tripBuilderChooseDriver.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a driver'**
+  String get tripBuilderChooseDriver;
+
+  /// No description provided for @tripBuilderProductCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} products'**
+  String tripBuilderProductCount(int count);
+
+  /// No description provided for @tripBuilderEnterUnit.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a unit'**
+  String get tripBuilderEnterUnit;
+
+  /// No description provided for @deliveriesErpTrip.
+  ///
+  /// In en, this message translates to:
+  /// **'ERPNext trip'**
+  String get deliveriesErpTrip;
+
+  /// No description provided for @deliveriesSyncError.
+  ///
+  /// In en, this message translates to:
+  /// **'ERP sync: Error — {error}'**
+  String deliveriesSyncError(String error);
+
+  /// No description provided for @deliveriesSyncPending.
+  ///
+  /// In en, this message translates to:
+  /// **'ERP sync: Pending'**
+  String get deliveriesSyncPending;
+
+  /// No description provided for @deliveriesSyncNotSynced.
+  ///
+  /// In en, this message translates to:
+  /// **'ERP sync: Not synced'**
+  String get deliveriesSyncNotSynced;
+
+  /// No description provided for @deliveriesSyncLast.
+  ///
+  /// In en, this message translates to:
+  /// **'ERP sync: Last synced {time}'**
+  String deliveriesSyncLast(String time);
+
+  /// No description provided for @stateUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get stateUnknown;
+
+  /// No description provided for @deliveryActionArrived.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark arrived'**
+  String get deliveryActionArrived;
+
+  /// No description provided for @deliveryActionDelivered.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm delivered'**
+  String get deliveryActionDelivered;
+
+  /// No description provided for @deliveryActionPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Record partial delivery'**
+  String get deliveryActionPartial;
+
+  /// No description provided for @deliveryActionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Record failed delivery'**
+  String get deliveryActionFailed;
+
+  /// No description provided for @deliveryActionUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update stop'**
+  String get deliveryActionUpdate;
+
+  /// No description provided for @deliveriesNextComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: All stops completed — route ready to close.'**
+  String get deliveriesNextComplete;
+
+  /// No description provided for @deliveriesNextLinkRideAdmin.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: Link a ride before the driver can update stops.'**
+  String get deliveriesNextLinkRideAdmin;
+
+  /// No description provided for @deliveriesNextLinkRideDriver.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: Start the saved route with vehicle {vehicle}, then link it here.'**
+  String deliveriesNextLinkRideDriver(String vehicle);
+
+  /// No description provided for @deliveriesNextConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: Confirm the delivery at {customer}.'**
+  String deliveriesNextConfirm(String customer);
+
+  /// No description provided for @deliveriesNextDrive.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: Drive to {customer}.'**
+  String deliveriesNextDrive(String customer);
+
+  /// No description provided for @deliveriesStopsCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Stops: {completed} of {total} completed'**
+  String deliveriesStopsCompleted(int completed, int total);
+
+  /// No description provided for @deliveriesReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Reason: {reason}'**
+  String deliveriesReason(String reason);
+
+  /// No description provided for @deliveriesExtraRequest.
+  ///
+  /// In en, this message translates to:
+  /// **'{shop} asked for {amount} {unit} {product}'**
+  String deliveriesExtraRequest(
+    String shop,
+    String amount,
+    String unit,
+    String product,
+  );
 
   /// No description provided for @adminRefreshRides.
   ///

@@ -5,16 +5,19 @@ import android.content.SharedPreferences;
 import android.location.Location;
 import app.organicmaps.sdk.util.log.Logger;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** A single worker persists samples and retries them while the foreground navigation service is alive. */
 public final class RouteOsLocationUploader
 {
+  private static final int UPLOAD_BATCH_SIZE = 20;
   private static RouteOsLocationUploader sInstance;
   private final Context mContext;
   private final SharedPreferences mPrefs;
@@ -122,8 +125,8 @@ public final class RouteOsLocationUploader
       return;
     try
     {
-      RouteOsLocationStore.Sample sample = mStore.newest(server, driverId);
-      if (sample == null)
+      List<RouteOsLocationStore.Sample> samples = mStore.newestBatch(server, driverId, UPLOAD_BATCH_SIZE);
+      if (samples.isEmpty())
       {
         long last = mPrefs.getLong("tracking_last_upload", 0);
         state(last == 0                                   ? "waiting_gps"
@@ -135,13 +138,31 @@ public final class RouteOsLocationUploader
       }
       try
       {
-        RouteOsApi.postForDriver(mContext, server, driverId, "/api/v1/rides/" + sample.rideId() + "/locations",
-                                 sample.body());
-        mStore.acknowledge(sample.id());
-        if (driverId == mPrefs.getLong("driver_id", 0) && server.equals(RouteOsApi.baseUrl(mContext))
-            && sample.rideId() == mPrefs.getLong("active_ride_id", 0))
+        RouteOsLocationStore.Sample newest = samples.get(0);
+        JSONArray locations = new JSONArray();
+        for (RouteOsLocationStore.Sample sample : samples)
+          locations.put(sample.body());
+        try
         {
-          long recorded = Instant.parse(sample.body().getString("recorded_at")).toEpochMilli();
+          RouteOsApi.postForDriver(mContext, server, driverId, "/api/v1/rides/" + newest.rideId() + "/locations/batch",
+                                   new JSONObject().put("driver_id", driverId).put("locations", locations));
+        }
+        catch (RouteOsApi.ApiException unavailableBatch)
+        {
+          if (unavailableBatch.status != 404)
+            throw unavailableBatch;
+          // The app can briefly reach the previous backend during a rolling deploy.
+          for (RouteOsLocationStore.Sample sample : samples)
+            RouteOsApi.postForDriver(mContext, server, driverId, "/api/v1/rides/" + sample.rideId() + "/locations",
+                                     sample.body());
+        }
+        mStore.acknowledge(samples);
+        if (driverId == mPrefs.getLong("driver_id", 0) && server.equals(RouteOsApi.baseUrl(mContext))
+            && newest.rideId() == mPrefs.getLong("active_ride_id", 0))
+        {
+          long recorded = 0;
+          for (RouteOsLocationStore.Sample sample : samples)
+            recorded = Math.max(recorded, Instant.parse(sample.body().getString("recorded_at")).toEpochMilli());
           mPrefs.edit()
               .putLong("tracking_last_upload", Math.max(recorded, mPrefs.getLong("tracking_last_upload", 0)))
               .apply();
@@ -160,15 +181,16 @@ public final class RouteOsLocationUploader
         }
         else if (error.status == 404 || error.status == 409)
         {
-          mStore.discardRide(server, driverId, sample.rideId());
+          long rideId = samples.get(0).rideId();
+          mStore.discardRide(server, driverId, rideId);
           if (driverId == mPrefs.getLong("driver_id", 0) && server.equals(RouteOsApi.baseUrl(mContext))
-              && sample.rideId() == mPrefs.getLong("active_ride_id", 0))
+              && rideId == mPrefs.getLong("active_ride_id", 0))
             RouteOsApi.clearActiveRide(mContext);
           schedule(0);
         }
         else if (error.status >= 400 && error.status < 500 && error.status != 408 && error.status != 429)
         {
-          mStore.acknowledge(sample.id());
+          mStore.acknowledge(samples);
           state("rejected", server, driverId);
           schedule(5000);
         }

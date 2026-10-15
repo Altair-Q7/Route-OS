@@ -338,6 +338,9 @@ class AppStringsEn extends AppStrings {
   String get tripBuilderRemoveProduct => 'Remove product';
 
   @override
+  String get tripBuilderRemoveStop => 'Remove stop';
+
+  @override
   String get tripBuilderProduct => 'Product';
 
   @override
@@ -460,6 +463,40 @@ class AppStringsEn extends AppStrings {
 
   @override
   String get adminActiveDrivers => 'Active drivers';
+
+  @override
+  String adminTrackingSummary(int active, int live) {
+    return '$active active · $live live';
+  }
+
+  @override
+  String get adminLive => 'LIVE';
+
+  @override
+  String get adminDriverFallback => 'Driver';
+
+  @override
+  String get adminTimeNow => 'now';
+
+  @override
+  String adminSecondsAgo(int count) {
+    return '${count}s ago';
+  }
+
+  @override
+  String adminMinutesAgo(int count) {
+    return '${count}m ago';
+  }
+
+  @override
+  String adminHoursAgo(int count) {
+    return '${count}h ago';
+  }
+
+  @override
+  String adminSpeedKmh(int speed) {
+    return '$speed km/h';
+  }
 
   @override
   String adminLiveRides(int count) {
@@ -600,6 +637,9 @@ class AppStringsEn extends AppStrings {
       'No saved routes yet. Plan or record your first route.';
 
   @override
+  String get routesNoMatches => 'No routes match your search or filter.';
+
+  @override
   String get routesSearch => 'Search saved routes';
 
   @override
@@ -625,6 +665,18 @@ class AppStringsEn extends AppStrings {
 
   @override
   String get routeDelete => 'Delete route';
+
+  @override
+  String routeDeleteTitle(String name) {
+    return 'Delete \"$name\"?';
+  }
+
+  @override
+  String get routeDeleteHint =>
+      'This removes the route from RouteOS for everyone. Completed ride history is preserved.';
+
+  @override
+  String get routeRecordedTrack => 'Recorded track';
 
   @override
   String get routeRename => 'Rename route';
@@ -777,6 +829,100 @@ class AppStringsEn extends AppStrings {
 
   @override
   String get actionRename => 'Rename';
+
+  @override
+  String get actionAssign => 'Assign';
+
+  @override
+  String get tripBuilderChooseDriver => 'Choose a driver';
+
+  @override
+  String tripBuilderProductCount(int count) {
+    return '$count products';
+  }
+
+  @override
+  String get tripBuilderEnterUnit => 'Enter a unit';
+
+  @override
+  String get deliveriesErpTrip => 'ERPNext trip';
+
+  @override
+  String deliveriesSyncError(String error) {
+    return 'ERP sync: Error — $error';
+  }
+
+  @override
+  String get deliveriesSyncPending => 'ERP sync: Pending';
+
+  @override
+  String get deliveriesSyncNotSynced => 'ERP sync: Not synced';
+
+  @override
+  String deliveriesSyncLast(String time) {
+    return 'ERP sync: Last synced $time';
+  }
+
+  @override
+  String get stateUnknown => 'Unknown';
+
+  @override
+  String get deliveryActionArrived => 'Mark arrived';
+
+  @override
+  String get deliveryActionDelivered => 'Confirm delivered';
+
+  @override
+  String get deliveryActionPartial => 'Record partial delivery';
+
+  @override
+  String get deliveryActionFailed => 'Record failed delivery';
+
+  @override
+  String get deliveryActionUpdate => 'Update stop';
+
+  @override
+  String get deliveriesNextComplete =>
+      'Next: All stops completed — route ready to close.';
+
+  @override
+  String get deliveriesNextLinkRideAdmin =>
+      'Next: Link a ride before the driver can update stops.';
+
+  @override
+  String deliveriesNextLinkRideDriver(String vehicle) {
+    return 'Next: Start the saved route with vehicle $vehicle, then link it here.';
+  }
+
+  @override
+  String deliveriesNextConfirm(String customer) {
+    return 'Next: Confirm the delivery at $customer.';
+  }
+
+  @override
+  String deliveriesNextDrive(String customer) {
+    return 'Next: Drive to $customer.';
+  }
+
+  @override
+  String deliveriesStopsCompleted(int completed, int total) {
+    return 'Stops: $completed of $total completed';
+  }
+
+  @override
+  String deliveriesReason(String reason) {
+    return 'Reason: $reason';
+  }
+
+  @override
+  String deliveriesExtraRequest(
+    String shop,
+    String amount,
+    String unit,
+    String product,
+  ) {
+    return '$shop asked for $amount $unit $product';
+  }
 
   @override
   String get adminRefreshRides => 'Refresh live rides';

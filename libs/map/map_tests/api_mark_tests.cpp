@@ -3,6 +3,8 @@
 #include "map/api_mark_point.hpp"
 #include "map/framework.hpp"
 
+#include "geometry/mercator.hpp"
+
 #include <string>
 
 namespace api_mark_tests
@@ -47,5 +49,20 @@ UNIT_TEST(ApiPoint_PointIdIsIndependentOfBackUrl)
     TEST_EQUAL(mark->GetApiID(), "foo", ());
     TEST_NOT_EQUAL(mark->GetApiID(), fm.GenerateApiBackUrl(*mark), ("point id and back URL are distinct"));
   }
+}
+
+UNIT_TEST(ApiPoint_PositionCanBeUpdatedWithoutRecreatingTheMark)
+{
+  Framework fm(FrameworkParams(false /* m_enableDiffs */));
+  CreateSingleApiMark(fm, "om://map?ll=1,2&id=driver-7");
+  auto const markId = *fm.GetBookmarkManager().GetUserMarkIds(UserMark::Type::API).begin();
+  {
+    auto session = fm.GetBookmarkManager().GetEditSession();
+    session.GetMarkForEdit<ApiMarkPoint>(markId)->SetPosition(mercator::FromLatLon(10.5, 77.25));
+  }
+  auto const * updated = fm.GetBookmarkManager().GetMark<ApiMarkPoint>(markId);
+  TEST_EQUAL(updated->GetApiID(), "driver-7", ());
+  TEST_ALMOST_EQUAL_ABS(updated->GetLatLon().m_lat, 10.5, 1e-6, ());
+  TEST_ALMOST_EQUAL_ABS(updated->GetLatLon().m_lon, 77.25, 1e-6, ());
 }
 }  // namespace api_mark_tests

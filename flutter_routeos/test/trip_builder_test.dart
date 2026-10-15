@@ -25,9 +25,7 @@ void main() {
     WidgetTester tester,
     Future<dynamic> Function(String, [Map<String, dynamic>]) request,
   ) async {
-    await tester.pumpWidget(
-      wrapForTest(TripBuilder(request: request)),
-    );
+    await tester.pumpWidget(wrapForTest(TripBuilder(request: request)));
     await tester.pumpAndSettle();
   }
 
@@ -46,7 +44,10 @@ void main() {
     required List<(String, String, String)> products,
   }) async {
     await tapVisible(tester, find.text('Add supermarket'));
-    await tester.enterText(find.widgetWithText(TextFormField, 'Supermarket name'), customer);
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Supermarket name'),
+      customer,
+    );
     await tester.enterText(
       find.widgetWithText(TextFormField, 'Latitude'),
       latitude,
@@ -58,9 +59,18 @@ void main() {
     for (var i = 0; i < products.length; i++) {
       // A new stop starts with no product rows, so each one is added explicitly.
       await tapVisible(tester, find.text('Add product'));
-      await tester.enterText(find.widgetWithText(TextFormField, 'Product').at(i), products[i].$1);
-      await tester.enterText(find.widgetWithText(TextFormField, 'Qty').at(i), products[i].$2);
-      await tester.enterText(find.widgetWithText(TextFormField, 'Unit').at(i), products[i].$3);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Product').at(i),
+        products[i].$1,
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Qty').at(i),
+        products[i].$2,
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Unit').at(i),
+        products[i].$3,
+      );
     }
     await tapVisible(tester, find.text('Save stop'));
   }
@@ -70,14 +80,22 @@ void main() {
     String reference = 'SAP-TRIP-1042',
     String vehicle = 'KL-07-AX-1234',
   }) async {
-    await tester.enterText(find.widgetWithText(TextFormField, 'Trip reference'), reference);
-    await tester.enterText(find.widgetWithText(TextFormField, 'Vehicle number'), vehicle);
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Trip reference'),
+      reference,
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Vehicle number'),
+      vehicle,
+    );
     await tapVisible(tester, find.byType(DropdownButtonFormField<int>));
     await tester.tap(find.text('Batter Driver').last);
     await tester.pumpAndSettle();
   }
 
-  testWidgets('sends a trip with stops, kg and packet quantities', (tester) async {
+  testWidgets('sends a trip with stops, kg and packet quantities', (
+    tester,
+  ) async {
     Map<String, dynamic>? created;
     await openBuilder(tester, (method, [data = const {}]) async {
       if (method == 'delivery.trip.create') created = data;
@@ -88,10 +106,7 @@ void main() {
     await fillStop(
       tester,
       customer: 'Metro Fresh',
-      products: [
-        ('Dosa Batter', '25', 'kg'),
-        ('Idli Batter', '5', 'packet'),
-      ],
+      products: [('Dosa Batter', '25', 'kg'), ('Idli Batter', '5', 'packet')],
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Create trip'));
     await tester.pumpAndSettle();
@@ -108,14 +123,24 @@ void main() {
         'latitude': 9.93,
         'longitude': 76.27,
         'items': [
-          {'product_name': 'Dosa Batter', 'planned_quantity': '25', 'uom': 'kg'},
-          {'product_name': 'Idli Batter', 'planned_quantity': '5', 'uom': 'packet'},
+          {
+            'product_name': 'Dosa Batter',
+            'planned_quantity': '25',
+            'uom': 'kg',
+          },
+          {
+            'product_name': 'Idli Batter',
+            'planned_quantity': '5',
+            'uom': 'packet',
+          },
         ],
       },
     ]);
   });
 
-  testWidgets('cannot save without a stop, a driver or a vehicle', (tester) async {
+  testWidgets('cannot save without a stop, a driver or a vehicle', (
+    tester,
+  ) async {
     var created = false;
     await openBuilder(tester, (method, [data = const {}]) async {
       if (method == 'delivery.trip.create') created = true;
@@ -151,19 +176,34 @@ void main() {
     await fillTripHeader(tester);
 
     await tapVisible(tester, find.text('Add supermarket'));
-    await tester.enterText(find.widgetWithText(TextFormField, 'Supermarket name'), 'Metro Fresh');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Latitude'), '9.93');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Longitude'), '76.27');
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Supermarket name'),
+      'Metro Fresh',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Latitude'),
+      '9.93',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Longitude'),
+      '76.27',
+    );
     // A stop with no products must not be accepted.
     await tapVisible(tester, find.text('Save stop'));
     expect(find.text('Add supermarket'), findsOneWidget); // dialog stayed open
 
     await tapVisible(tester, find.text('Add product'));
-    await tester.enterText(find.widgetWithText(TextFormField, 'Product'), 'Dosa Batter');
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Product'),
+      'Dosa Batter',
+    );
     await tester.enterText(find.widgetWithText(TextFormField, 'Qty'), '0');
     await tester.enterText(find.widgetWithText(TextFormField, 'Unit'), 'kg');
     await tapVisible(tester, find.text('Save stop'));
-    expect(find.text('Add supermarket'), findsOneWidget); // still open: qty was zero
+    expect(
+      find.text('Add supermarket'),
+      findsOneWidget,
+    ); // still open: qty was zero
 
     await tester.enterText(find.widgetWithText(TextFormField, 'Qty'), '25');
     await tapVisible(tester, find.text('Save stop'));
@@ -173,9 +213,18 @@ void main() {
   testWidgets('rejects a missing or out-of-range coordinate', (tester) async {
     await openBuilder(tester, responder);
     await tapVisible(tester, find.text('Add supermarket'));
-    await tester.enterText(find.widgetWithText(TextFormField, 'Supermarket name'), 'Metro Fresh');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Latitude'), '99');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Longitude'), '76.27');
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Supermarket name'),
+      'Metro Fresh',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Latitude'),
+      '99',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Longitude'),
+      '76.27',
+    );
     await tapVisible(tester, find.text('Save stop'));
     // Latitude 99 is out of range, so the stop must not be created.
     expect(find.text('Add supermarket'), findsOneWidget);
@@ -192,8 +241,16 @@ void main() {
       return responder(method, data);
     });
     await fillTripHeader(tester);
-    await fillStop(tester, customer: 'Metro Fresh', products: [('Dosa Batter', '25', 'kg')]);
-    await fillStop(tester, customer: 'City Mart', products: [('Idli Batter', '5', 'packet')]);
+    await fillStop(
+      tester,
+      customer: 'Metro Fresh',
+      products: [('Dosa Batter', '25', 'kg')],
+    );
+    await fillStop(
+      tester,
+      customer: 'City Mart',
+      products: [('Idli Batter', '5', 'packet')],
+    );
 
     expect(find.text('Metro Fresh'), findsOneWidget);
     expect(find.text('City Mart'), findsOneWidget);
@@ -207,13 +264,19 @@ void main() {
     expect((created!['stops'] as List).first['stop_ref'], 'STOP-1');
   });
 
-  testWidgets('a server failure keeps the entered trip on screen', (tester) async {
+  testWidgets('a server failure keeps the entered trip on screen', (
+    tester,
+  ) async {
     await openBuilder(tester, (method, [data = const {}]) async {
       if (method == 'delivery.trip.create') throw StateError('driver mismatch');
       return responder(method, data);
     });
     await fillTripHeader(tester);
-    await fillStop(tester, customer: 'Metro Fresh', products: [('Dosa Batter', '25', 'kg')]);
+    await fillStop(
+      tester,
+      customer: 'Metro Fresh',
+      products: [('Dosa Batter', '25', 'kg')],
+    );
     await tapVisible(tester, find.widgetWithText(FilledButton, 'Create trip'));
 
     expect(find.text('Metro Fresh'), findsOneWidget);

@@ -189,6 +189,7 @@
   "tripBuilderProducts": "Products to deliver",
   "tripBuilderAddProduct": "Add product",
   "tripBuilderRemoveProduct": "Remove product",
+  "tripBuilderRemoveStop": "Remove stop",
   "tripBuilderProduct": "Product",
   "tripBuilderQuantity": "Qty",
   "tripBuilderUnit": "Unit",
@@ -259,6 +260,52 @@
   "shopProductIncomplete": "Each product needs a name, a positive quantity and a unit",
   "shopNameRequired": "Enter the name",
   "adminActiveDrivers": "Active drivers",
+  "adminTrackingSummary": "{active} active · {live} live",
+  "@adminTrackingSummary": {
+    "placeholders": {
+      "active": {
+        "type": "int"
+      },
+      "live": {
+        "type": "int"
+      }
+    }
+  },
+  "adminLive": "LIVE",
+  "adminDriverFallback": "Driver",
+  "adminTimeNow": "now",
+  "adminSecondsAgo": "{count}s ago",
+  "@adminSecondsAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminMinutesAgo": "{count}m ago",
+  "@adminMinutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminHoursAgo": "{count}h ago",
+  "@adminHoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminSpeedKmh": "{speed} km/h",
+  "@adminSpeedKmh": {
+    "placeholders": {
+      "speed": {
+        "type": "int"
+      }
+    }
+  },
   "adminLiveRides": "{count} live rides",
   "@adminLiveRides": {
     "placeholders": {
@@ -353,6 +400,7 @@
   "routesTitle": "My Routes",
   "routesSavedTitle": "Saved Routes",
   "routesEmpty": "No saved routes yet. Plan or record your first route.",
+  "routesNoMatches": "No routes match your search or filter.",
   "routesSearch": "Search saved routes",
   "routesFavourites": "Favourites",
   "routesRemoveRecent": "Remove from recent routes",
@@ -361,6 +409,16 @@
   "routeTimeout": "Route calculation timed out. Check regional maps and retry.",
   "routeName": "Route name",
   "routeDelete": "Delete route",
+  "routeDeleteTitle": "Delete \"{name}\"?",
+  "@routeDeleteTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "routeDeleteHint": "This removes the route from RouteOS for everyone. Completed ride history is preserved.",
+  "routeRecordedTrack": "Recorded track",
   "routeRename": "Rename route",
   "routeShare": "Share route",
   "routeOpen": "Open / edit drawn route",
@@ -432,6 +490,104 @@
   "screenClosed": "Screen closed",
   "loginDevelopmentAccounts": "Development accounts",
   "actionRename": "Rename",
+  "actionAssign": "Assign",
+  "tripBuilderChooseDriver": "Choose a driver",
+  "tripBuilderProductCount": "{count} products",
+  "@tripBuilderProductCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "tripBuilderEnterUnit": "Enter a unit",
+  "deliveriesErpTrip": "ERPNext trip",
+  "deliveriesSyncError": "ERP sync: Error — {error}",
+  "@deliveriesSyncError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesSyncPending": "ERP sync: Pending",
+  "deliveriesSyncNotSynced": "ERP sync: Not synced",
+  "deliveriesSyncLast": "ERP sync: Last synced {time}",
+  "@deliveriesSyncLast": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "stateUnknown": "Unknown",
+  "deliveryActionArrived": "Mark arrived",
+  "deliveryActionDelivered": "Confirm delivered",
+  "deliveryActionPartial": "Record partial delivery",
+  "deliveryActionFailed": "Record failed delivery",
+  "deliveryActionUpdate": "Update stop",
+  "deliveriesNextComplete": "Next: All stops completed — route ready to close.",
+  "deliveriesNextLinkRideAdmin": "Next: Link a ride before the driver can update stops.",
+  "deliveriesNextLinkRideDriver": "Next: Start the saved route with vehicle {vehicle}, then link it here.",
+  "@deliveriesNextLinkRideDriver": {
+    "placeholders": {
+      "vehicle": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesNextConfirm": "Next: Confirm the delivery at {customer}.",
+  "@deliveriesNextConfirm": {
+    "placeholders": {
+      "customer": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesNextDrive": "Next: Drive to {customer}.",
+  "@deliveriesNextDrive": {
+    "placeholders": {
+      "customer": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesStopsCompleted": "Stops: {completed} of {total} completed",
+  "@deliveriesStopsCompleted": {
+    "placeholders": {
+      "completed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "deliveriesReason": "Reason: {reason}",
+  "@deliveriesReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveriesExtraRequest": "{shop} asked for {amount} {unit} {product}",
+  "@deliveriesExtraRequest": {
+    "placeholders": {
+      "shop": {
+        "type": "String"
+      },
+      "amount": {
+        "type": "String"
+      },
+      "unit": {
+        "type": "String"
+      },
+      "product": {
+        "type": "String"
+      }
+    }
+  },
   "adminRefreshRides": "Refresh live rides",
   "reportsTitle": "Delivery reports",
   "reportsShortages": "Shortages and failures",

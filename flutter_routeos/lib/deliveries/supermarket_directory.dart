@@ -98,9 +98,11 @@ class _SupermarketDirectoryState extends State<SupermarketDirectory> {
                     order.isEmpty
                         ? AppStrings.of(context).shopNoOrder
                         : order
-                            .map((item) =>
-                                '${item['quantity']} ${item['uom']} ${item['product_name']}')
-                            .join(', '),
+                              .map(
+                                (item) =>
+                                    '${item['quantity']} ${item['uom']} ${item['product_name']}',
+                              )
+                              .join(', '),
                   ),
                   trailing: shop['active'] == 1
                       ? null
@@ -152,7 +154,7 @@ class _ShopDialogState extends State<_ShopDialog> {
           'product_name': item['product_name'].toString(),
           'quantity': item['quantity'].toString(),
           'uom': item['uom'].toString(),
-        }
+        },
     ];
   }
 
@@ -170,7 +172,11 @@ class _ShopDialogState extends State<_ShopDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.shop == null ? AppStrings.of(context).shopAdd : AppStrings.of(context).shopEdit),
+    title: Text(
+      widget.shop == null
+          ? AppStrings.of(context).shopAdd
+          : AppStrings.of(context).shopEdit,
+    ),
     scrollable: true,
     content: Form(
       key: _form,
@@ -180,14 +186,19 @@ class _ShopDialogState extends State<_ShopDialog> {
           TextFormField(
             controller: _name,
             maxLength: 140,
-            decoration: InputDecoration(labelText: AppStrings.of(context).shopName),
-            validator: (value) =>
-                (value ?? '').trim().isEmpty ? AppStrings.of(context).shopNameRequired : null,
+            decoration: InputDecoration(
+              labelText: AppStrings.of(context).shopName,
+            ),
+            validator: (value) => (value ?? '').trim().isEmpty
+                ? AppStrings.of(context).shopNameRequired
+                : null,
           ),
           TextFormField(
             controller: _address,
             maxLength: 500,
-            decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderAddress),
+            decoration: InputDecoration(
+              labelText: AppStrings.of(context).tripBuilderAddress,
+            ),
           ),
           Row(
             children: [
@@ -198,11 +209,19 @@ class _ShopDialogState extends State<_ShopDialog> {
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderLatitude),
-                  validator: (value) => validateCoordinate(value,
-                      limit: 90,
-                      missing: AppStrings.of(context).tripBuilderCoordinateMissing,
-                      outOfRange: AppStrings.of(context).tripBuilderCoordinateRange),
+                  decoration: InputDecoration(
+                    labelText: AppStrings.of(context).tripBuilderLatitude,
+                  ),
+                  validator: (value) => validateCoordinate(
+                    value,
+                    limit: 90,
+                    missing: AppStrings.of(
+                      context,
+                    ).tripBuilderCoordinateMissing,
+                    outOfRange: AppStrings.of(
+                      context,
+                    ).tripBuilderCoordinateRange,
+                  ),
                 ),
               ),
               SizedBox(width: 12),
@@ -213,11 +232,19 @@ class _ShopDialogState extends State<_ShopDialog> {
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderLongitude),
-                  validator: (value) => validateCoordinate(value,
-                      limit: 180,
-                      missing: AppStrings.of(context).tripBuilderCoordinateMissing,
-                      outOfRange: AppStrings.of(context).tripBuilderCoordinateRange),
+                  decoration: InputDecoration(
+                    labelText: AppStrings.of(context).tripBuilderLongitude,
+                  ),
+                  validator: (value) => validateCoordinate(
+                    value,
+                    limit: 180,
+                    missing: AppStrings.of(
+                      context,
+                    ).tripBuilderCoordinateMissing,
+                    outOfRange: AppStrings.of(
+                      context,
+                    ).tripBuilderCoordinateRange,
+                  ),
                 ),
               ),
             ],
@@ -231,9 +258,7 @@ class _ShopDialogState extends State<_ShopDialog> {
             ),
           ),
           SizedBox(height: 4),
-          Text(
-            AppStrings.of(context).shopUsualOrderHint,
-          ),
+          Text(AppStrings.of(context).shopUsualOrderHint),
           const SizedBox(height: 8),
           for (var i = 0; i < _order.length; i++)
             Padding(
@@ -310,7 +335,9 @@ class _ShopDialogState extends State<_ShopDialog> {
           quantity <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Each product needs a name, a positive quantity and a unit'),
+            content: Text(
+              'Each product needs a name, a positive quantity and a unit',
+            ),
           ),
         );
         return;
@@ -324,8 +351,12 @@ class _ShopDialogState extends State<_ShopDialog> {
     final body = {
       'name': _name.text.trim(),
       'address': _address.text.trim(),
-      'latitude': double.parse(_latitude.text.trim().isEmpty ? '0' : _latitude.text.trim()),
-      'longitude': double.parse(_longitude.text.trim().isEmpty ? '0' : _longitude.text.trim()),
+      'latitude': double.parse(
+        _latitude.text.trim().isEmpty ? '0' : _latitude.text.trim(),
+      ),
+      'longitude': double.parse(
+        _longitude.text.trim().isEmpty ? '0' : _longitude.text.trim(),
+      ),
       'standing_order': items,
     };
     try {
@@ -337,13 +368,12 @@ class _ShopDialogState extends State<_ShopDialog> {
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
       }
     }
   }
-
 }
 
 /// A shop may be saved before it has coordinates, so an empty value is allowed.

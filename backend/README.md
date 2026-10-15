@@ -28,10 +28,13 @@ The MVP API provides:
   portable GPS points.
 - `POST /api/v1/routes` — name and publish a track as a shared RouteOS route.
 - `GET /api/v1/routes` — list routes available to another driver.
-- `GET /api/v1/routes/{id}` — retrieve the route and its track points for native
-  Organic Maps import/navigation.
+- `GET /api/v1/routes/{id}` — retrieve route geometry. Mobile map previews use
+  `?max_points=2000`; navigation uses two endpoints while the original recording
+  remains untouched for full export.
 - `POST /api/v1/rides` — start a route with a simple vehicle type and number.
 - `POST /api/v1/rides/{id}/locations` — publish the driver's current location.
+- `POST /api/v1/rides/{id}/locations/batch` — upload up to 20 durable location
+  samples in one transaction; the single-sample endpoint remains compatible.
 - `GET /api/v1/rides/active` — list active rides for the admin map.
 - `POST /api/v1/rides/{id}/end` — end the ride and stop live tracking.
 - `POST /api/v1/rides/{id}/arrive` — confirm arrival within 150 metres of the destination using GPS no older than two minutes.
@@ -124,13 +127,27 @@ For a reliable deployment with the current backend:
 If you need to keep free web hosting, a separate durable database and a backend
 migration are required. This backend currently uses SQLite, not PostgreSQL.
 
-Android navigation persists up to 1,000 GPS samples in an account/server-scoped
-SQLite outbox and retries network/server failures with backoff. Samples include
+Android navigation persists up to 1,000 GPS samples per account/server in a
+SQLite outbox, uploads backlogs in batches of 20, and retries network/server
+failures with backoff. Samples include
 `sample_id`, UTC `recorded_at`, and optional `accuracy_meters`; retries are
 deduplicated by `(ride_id, sample_id)`. Admin markers use the newest recorded
 timestamp and flag GPS older than 30 seconds. Expired sessions retain queued
 samples and allow the same driver to sign in during a ride. Native arrival keeps
 tracking active until an explicit server-confirmed End Ride.
+
+The backend keeps a constant-size `latest_locations` row per ride for the live
+admin map instead of searching the complete telemetry history on every poll.
+Ended-ride location samples older than `ROUTEOS_LOCATION_RETENTION_DAYS` (30 by
+default) are pruned at startup. Route responses support bounded geometry and
+gzip, while exact distance, duration and original point count remain persisted.
+`GET /api/v1/routes` is capped at 500 rows by default and supports `limit` and
+`offset` for controlled migrations to server-side search/pagination.
+
+This SQLite deployment is suitable for one service instance and a modest fleet.
+Keep Uvicorn at one worker. Horizontal multi-instance deployment requires moving
+the database and ERP synchronization lock to shared infrastructure; adding more
+workers to the SQLite deployment is not a safe scaling shortcut.
 
 ## Verify
 

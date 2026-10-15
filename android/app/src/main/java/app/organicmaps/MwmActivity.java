@@ -31,12 +31,12 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.Window;
-import android.widget.TextView;
-import android.widget.Toast;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
 import androidx.activity.SystemBarStyle;
 import androidx.activity.result.ActivityResult;
 import androidx.activity.result.ActivityResultLauncher;
@@ -54,15 +54,6 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
-import app.routeos.RouteOsApi;
-import app.routeos.RouteOsAdminOverlay;
-import app.routeos.RouteOsHomeOverlay;
-import app.routeos.RouteOsNavigationOverlay;
-import app.routeos.RouteOsLoginActivity;
-import app.routeos.RouteOsRecordingSession;
-import app.routeos.RouteOsRoutesActivity;
-import app.routeos.RouteOsTrackPreview;
-import app.routeos.RouteOsUi;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
@@ -73,8 +64,6 @@ import app.organicmaps.bookmarks.BookmarkCategoriesActivity;
 import app.organicmaps.downloader.DownloaderActivity;
 import app.organicmaps.downloader.MapManagerHelper;
 import app.organicmaps.downloader.OnmapDownloader;
-import app.organicmaps.sdk.downloader.CountryItem;
-import app.organicmaps.sdk.downloader.MapManager;
 import app.organicmaps.editor.EditorActivity;
 import app.organicmaps.editor.FeatureCategoryActivity;
 import app.organicmaps.editor.OsmLoginActivity;
@@ -104,6 +93,7 @@ import app.organicmaps.sdk.bookmarks.data.TrackRecording;
 import app.organicmaps.sdk.display.DisplayChangedListener;
 import app.organicmaps.sdk.display.DisplayManager;
 import app.organicmaps.sdk.display.DisplayType;
+import app.organicmaps.sdk.downloader.CountryItem;
 import app.organicmaps.sdk.downloader.MapManager;
 import app.organicmaps.sdk.downloader.UpdateInfo;
 import app.organicmaps.sdk.editor.Editor;
@@ -115,9 +105,9 @@ import app.organicmaps.sdk.location.LocationUtils;
 import app.organicmaps.sdk.location.SensorListener;
 import app.organicmaps.sdk.location.TrackRecorder;
 import app.organicmaps.sdk.maplayer.isolines.IsolinesState;
+import app.organicmaps.sdk.routing.JunctionInfo;
 import app.organicmaps.sdk.routing.RoutingController;
 import app.organicmaps.sdk.routing.RoutingInfo;
-import app.organicmaps.sdk.routing.JunctionInfo;
 import app.organicmaps.sdk.routing.RoutingOptions;
 import app.organicmaps.sdk.search.SearchEngine;
 import app.organicmaps.sdk.settings.RoadType;
@@ -143,6 +133,15 @@ import app.organicmaps.util.bottomsheet.MenuBottomSheetFragment;
 import app.organicmaps.util.bottomsheet.MenuBottomSheetItem;
 import app.organicmaps.widget.placepage.PlacePageController;
 import app.organicmaps.widget.placepage.PlacePageViewModel;
+import app.routeos.RouteOsAdminOverlay;
+import app.routeos.RouteOsApi;
+import app.routeos.RouteOsHomeOverlay;
+import app.routeos.RouteOsLoginActivity;
+import app.routeos.RouteOsNavigationOverlay;
+import app.routeos.RouteOsRecordingSession;
+import app.routeos.RouteOsRoutesActivity;
+import app.routeos.RouteOsTrackPreview;
+import app.routeos.RouteOsUi;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import java.util.ArrayList;
@@ -237,8 +236,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
   private long mRouteOsActiveRideId = 0;
   private boolean mRouteOsOrientationTransitionPending = false;
   private final Handler mRouteOsOrientationHandler = new Handler(Looper.getMainLooper());
-  private final Runnable mRouteOsOrientationUpdate = new Runnable()
-  {
+  private final Runnable mRouteOsOrientationUpdate = new Runnable() {
     @Override
     public void run()
     {
@@ -272,7 +270,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
     setOrganicChromeVisible(false);
     if (mRouteOsFlutter == null)
     {
-      if (!isRouteOsRideActive()) {
+      if (!isRouteOsRideActive())
+      {
         RoutingController.get().cancel();
         Framework.nativeCloseRouting();
         Framework.nativeRemoveRoute();
@@ -314,7 +313,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
   {
     mRouteOsOrientationHandler.removeCallbacks(mRouteOsOrientationUpdate);
     mRouteOsOrientationTransitionPending = false;
-    if (mRouteOsFlutter != null) mRouteOsFlutter.rideStopped();
+    if (mRouteOsFlutter != null)
+      mRouteOsFlutter.rideStopped();
     RoutingController.get().cancel();
     Framework.nativeCloseRouting();
     Framework.nativeRemoveRoute();
@@ -323,7 +323,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
     RouteOsTrackPreview.clear(this);
     mRouteOsActiveRideId = 0;
     RouteOsApi.clearActiveRide(this);
-    if (mRouteOsFlutter != null) mRouteOsFlutter.emit("navigation.stopped", java.util.Map.of());
+    if (mRouteOsFlutter != null)
+      mRouteOsFlutter.emit("navigation.stopped", java.util.Map.of());
   }
 
   public void routeOsFlutterRecord()
@@ -337,9 +338,11 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
   private void bindRouteOsFlutterRecordingStats()
   {
-    if (mRouteOsFlutter == null || !TrackRecorder.nativeIsTrackRecordingEnabled()) return;
+    if (mRouteOsFlutter == null || !TrackRecorder.nativeIsTrackRecordingEnabled())
+      return;
     TrackRecorder.nativeSetTrackRecordingStatsListener(stats -> {
-      if (mRouteOsFlutter != null) mRouteOsFlutter.emit("recording.progress", java.util.Map.of("distance_meters",stats.getLength(),"duration_seconds",stats.getDuration()));
+      if (mRouteOsFlutter != null)
+        mRouteOsFlutter.recordingProgress(stats.getLength(), stats.getDuration());
     });
   }
 
@@ -428,7 +431,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
     {
       setOrganicChromeVisible(false);
       RoutingController.get().cancel();
-      if (startTrackRecording()) showRouteOsRecordingOverlay();
+      if (startTrackRecording())
+        showRouteOsRecordingOverlay();
       return;
     }
 
@@ -525,7 +529,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
     }
 
     boolean routeOsEntry = Intent.ACTION_MAIN.equals(intent.getAction()) || intent.getAction() == null;
-    if (routeOsEntry && !intent.getBooleanExtra("routeos_skip_home", false) && !intent.getBooleanExtra("routeos_native", false))
+    if (routeOsEntry && !intent.getBooleanExtra("routeos_skip_home", false)
+        && !intent.getBooleanExtra("routeos_native", false))
     {
       showRouteOsFlutter();
       startRouteOsLocation();
@@ -599,13 +604,15 @@ public class MwmActivity extends BaseMwmFragmentActivity
   private FrameLayout routeOsMapOverlay(String title, String subtitle)
   {
     FrameLayout overlay = new FrameLayout(this);
-    LinearLayout header = new LinearLayout(this); header.setOrientation(LinearLayout.VERTICAL);
+    LinearLayout header = new LinearLayout(this);
+    header.setOrientation(LinearLayout.VERTICAL);
     header.setPadding(RouteOsUi.dp(this, 20), RouteOsUi.dp(this, 12), RouteOsUi.dp(this, 20), RouteOsUi.dp(this, 12));
     header.setBackground(RouteOsUi.background(Color.argb(246, 8, 17, 24), RouteOsUi.dp(this, 18), RouteOsUi.STROKE));
     header.addView(RouteOsUi.text(this, title, 21, Color.WHITE, true));
     header.addView(RouteOsUi.text(this, subtitle, 13, RouteOsUi.MUTED, false));
     FrameLayout.LayoutParams headerParams = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 82));
-    headerParams.gravity = android.view.Gravity.TOP; headerParams.setMargins(RouteOsUi.dp(this, 14), RouteOsUi.dp(this, 34), RouteOsUi.dp(this, 14), 0);
+    headerParams.gravity = android.view.Gravity.TOP;
+    headerParams.setMargins(RouteOsUi.dp(this, 14), RouteOsUi.dp(this, 34), RouteOsUi.dp(this, 14), 0);
     overlay.addView(header, headerParams);
     overlay.addView(routeOsLocateButton());
     return overlay;
@@ -676,7 +683,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
   {
     if (mRouteOsFlutter != null)
     {
-      mRouteOsFlutter.emit("recording.stopped", java.util.Map.of());
+      mRouteOsFlutter.recordingStopped();
       return;
     }
     setOrganicChromeVisible(false);
@@ -690,8 +697,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
     }
     if (mRouteOsHome == null)
     {
-      mRouteOsHome = new RouteOsHomeOverlay(this, new RouteOsHomeOverlay.Host()
-      {
+      mRouteOsHome = new RouteOsHomeOverlay(this, new RouteOsHomeOverlay.Host() {
         @Override
         public void routeOsStartRecording()
         {
@@ -749,26 +755,27 @@ public class MwmActivity extends BaseMwmFragmentActivity
     final String role = prefs.getString("role", "driver");
     new MaterialAlertDialogBuilder(this)
         .setTitle(name)
-        .setMessage("admin".equals(role)
-                        ? "Admin account • live ride tracking is available from the map."
-                        : "Driver account • shared routes are available to every signed-in driver.")
+        .setMessage("admin".equals(role) ? "Admin account • live ride tracking is available from the map."
+                                           : "Driver account • shared routes are available to every signed-in driver.")
         .setNegativeButton(android.R.string.cancel, null)
-        .setPositiveButton("Switch account", (dialog, which) -> {
-          if (mRouteOsHome != null)
-          {
-            mRouteOsHome.destroy();
-            mRouteOsHome = null;
-          }
-          RouteOsApi.logout(this);
-          startActivity(new Intent(this, RouteOsLoginActivity.class));
-        })
+        .setPositiveButton("Switch account",
+                           (dialog, which) -> {
+                             if (mRouteOsHome != null)
+                             {
+                               mRouteOsHome.destroy();
+                               mRouteOsHome = null;
+                             }
+                             RouteOsApi.logout(this);
+                             startActivity(new Intent(this, RouteOsLoginActivity.class));
+                           })
         .show();
   }
 
   private void showRouteOsMapOverlay()
   {
     FrameLayout overlay = routeOsMapOverlay("RouteOS Map", "Drag and zoom • the map is live");
-    LinearLayout actions = new LinearLayout(this); actions.setGravity(android.view.Gravity.CENTER);
+    LinearLayout actions = new LinearLayout(this);
+    actions.setGravity(android.view.Gravity.CENTER);
     TextView home = routeOsButton("Home", Color.rgb(21, 43, 52));
     home.setOnClickListener(v -> showRouteOsHomeOverlay());
     TextView draw = routeOsButton("Draw Route", Color.rgb(0, 133, 89));
@@ -783,7 +790,10 @@ public class MwmActivity extends BaseMwmFragmentActivity
     actions.addView(download, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 1, this));
     actions.setPadding(RouteOsUi.dp(this, 6), RouteOsUi.dp(this, 6), RouteOsUi.dp(this, 6), RouteOsUi.dp(this, 6));
     actions.setBackground(RouteOsUi.background(Color.argb(248, 8, 17, 24), RouteOsUi.dp(this, 22), RouteOsUi.STROKE));
-    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 72)); params.gravity = android.view.Gravity.BOTTOM; params.setMargins(RouteOsUi.dp(this, 10), 0, RouteOsUi.dp(this, 10), RouteOsUi.dp(this, 18)); overlay.addView(actions, params);
+    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 72));
+    params.gravity = android.view.Gravity.BOTTOM;
+    params.setMargins(RouteOsUi.dp(this, 10), 0, RouteOsUi.dp(this, 10), RouteOsUi.dp(this, 18));
+    overlay.addView(actions, params);
     addRouteOsOverlay(overlay);
   }
 
@@ -854,10 +864,14 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
   private void showRouteOsRecordingOverlay()
   {
-    FrameLayout overlay = routeOsMapOverlay("Recording Route", "Drive from the hub; RouteOS is capturing GPS in the background");
+    FrameLayout overlay =
+        routeOsMapOverlay("Recording Route", "Drive from the hub; RouteOS is capturing GPS in the background");
     TextView stop = routeOsButton("Stop & Save Route", Color.rgb(240, 58, 68));
     stop.setOnClickListener(v -> onTrackRecordingSaved());
-    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 58)); params.gravity = android.view.Gravity.BOTTOM; params.setMargins(RouteOsUi.dp(this, 20), 0, RouteOsUi.dp(this, 20), RouteOsUi.dp(this, 24)); overlay.addView(stop, params);
+    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 58));
+    params.gravity = android.view.Gravity.BOTTOM;
+    params.setMargins(RouteOsUi.dp(this, 20), 0, RouteOsUi.dp(this, 20), RouteOsUi.dp(this, 24));
+    overlay.addView(stop, params);
     addRouteOsOverlay(overlay);
   }
 
@@ -873,68 +887,134 @@ public class MwmActivity extends BaseMwmFragmentActivity
     }
     Framework.nativeZoomToPoint(hub.getLatitude(), hub.getLongitude(), 15, true);
     FrameLayout overlay = routeOsMapOverlay("Draw Hub Route", "Center each waypoint, then tap Add Point");
-    TextView crosshair = RouteOsUi.text(this, "+", 40, RouteOsUi.GREEN, false); crosshair.setGravity(android.view.Gravity.CENTER);
-    FrameLayout.LayoutParams crosshairParams = new FrameLayout.LayoutParams(RouteOsUi.dp(this, 60), RouteOsUi.dp(this, 60)); crosshairParams.gravity = android.view.Gravity.CENTER; overlay.addView(crosshair, crosshairParams);
-    LinearLayout actions = new LinearLayout(this); actions.setGravity(android.view.Gravity.CENTER); actions.setPadding(RouteOsUi.dp(this, 8), RouteOsUi.dp(this, 8), RouteOsUi.dp(this, 8), RouteOsUi.dp(this, 8));
+    TextView crosshair = RouteOsUi.text(this, "+", 40, RouteOsUi.GREEN, false);
+    crosshair.setGravity(android.view.Gravity.CENTER);
+    FrameLayout.LayoutParams crosshairParams =
+        new FrameLayout.LayoutParams(RouteOsUi.dp(this, 60), RouteOsUi.dp(this, 60));
+    crosshairParams.gravity = android.view.Gravity.CENTER;
+    overlay.addView(crosshair, crosshairParams);
+    LinearLayout actions = new LinearLayout(this);
+    actions.setGravity(android.view.Gravity.CENTER);
+    actions.setPadding(RouteOsUi.dp(this, 8), RouteOsUi.dp(this, 8), RouteOsUi.dp(this, 8), RouteOsUi.dp(this, 8));
     actions.setBackground(RouteOsUi.background(Color.argb(248, 8, 17, 24), RouteOsUi.dp(this, 22), RouteOsUi.STROKE));
     TextView cancel = routeOsButton("Cancel", Color.rgb(42, 54, 65));
     TextView addPoint = routeOsButton("Add Point", Color.rgb(35, 69, 78));
     TextView preview = routeOsButton("Preview Route", Color.rgb(0, 133, 89));
-    TextView save = routeOsButton("Save", Color.rgb(14, 82, 64)); save.setEnabled(false); save.setAlpha(0.5f);
+    TextView save = routeOsButton("Save", Color.rgb(14, 82, 64));
+    save.setEnabled(false);
+    save.setAlpha(0.5f);
     final double[][] destination = new double[1][];
     final ArrayList<double[]> waypoints = new ArrayList<>();
-    cancel.setOnClickListener(v -> { RoutingController.get().cancel(); ((android.view.ViewGroup) overlay.getParent()).removeView(overlay); showRouteOsMapOverlay(); });
+    cancel.setOnClickListener(v -> {
+      RoutingController.get().cancel();
+      ((android.view.ViewGroup) overlay.getParent()).removeView(overlay);
+      showRouteOsMapOverlay();
+    });
     addPoint.setOnClickListener(v -> {
       waypoints.add(Framework.nativeGetScreenRectCenter());
       addPoint.setText("Point " + waypoints.size());
       Toast.makeText(this, "Waypoint " + waypoints.size() + " added", Toast.LENGTH_SHORT).show();
     });
     preview.setOnClickListener(v -> {
-      if (waypoints.isEmpty()) waypoints.add(Framework.nativeGetScreenRectCenter());
+      if (waypoints.isEmpty())
+        waypoints.add(Framework.nativeGetScreenRectCenter());
       destination[0] = waypoints.get(waypoints.size() - 1);
-      MapObject start = MapObject.createMapObject(MapObject.MY_POSITION, "Hub", "Current location", hub.getLatitude(), hub.getLongitude());
-      MapObject finish = MapObject.createMapObject(MapObject.POI, "Destination", "Drawn on map", destination[0][0], destination[0][1]);
+      MapObject start = MapObject.createMapObject(MapObject.MY_POSITION, "Hub", "Current location", hub.getLatitude(),
+                                                  hub.getLongitude());
+      MapObject finish =
+          MapObject.createMapObject(MapObject.POI, "Destination", "Drawn on map", destination[0][0], destination[0][1]);
       RoutingController.get().prepare(start, finish);
       for (int i = 0; i < waypoints.size() - 1; i++)
       {
         double[] point = waypoints.get(i);
-        RoutingController.get().addStop(MapObject.createMapObject(MapObject.POI, "Waypoint " + (i + 1),
-                                                                  "RouteOS waypoint", point[0], point[1]));
+        RoutingController.get().addStop(
+            MapObject.createMapObject(MapObject.POI, "Waypoint " + (i + 1), "RouteOS waypoint", point[0], point[1]));
       }
       // prepare() only sets points; without intermediate stops nothing above triggers a build,
       // so a single-waypoint preview would silently render nothing.
       RoutingController.get().checkAndBuildRoute();
-      findViewById(R.id.routing_container).postDelayed(() -> findViewById(R.id.routing_container).setVisibility(View.GONE), 250);
-      save.setEnabled(true); save.setAlpha(1f); preview.setText("Update Preview");
+      findViewById(R.id.routing_container)
+          .postDelayed(() -> findViewById(R.id.routing_container).setVisibility(View.GONE), 250);
+      save.setEnabled(true);
+      save.setAlpha(1f);
+      preview.setText("Update Preview");
     });
     save.setOnClickListener(v -> saveDrawnRoute(hub, destination[0]));
     actions.addView(cancel, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 0.85f, this));
     actions.addView(addPoint, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 1, this));
     actions.addView(preview, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 1.2f, this));
     actions.addView(save, RouteOsUi.params(0, RouteOsUi.dp(this, 54), 0.8f, this));
-    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 72)); params.gravity = android.view.Gravity.BOTTOM; params.setMargins(RouteOsUi.dp(this, 10), 0, RouteOsUi.dp(this, 10), RouteOsUi.dp(this, 18)); overlay.addView(actions, params);
+    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, RouteOsUi.dp(this, 72));
+    params.gravity = android.view.Gravity.BOTTOM;
+    params.setMargins(RouteOsUi.dp(this, 10), 0, RouteOsUi.dp(this, 10), RouteOsUi.dp(this, 18));
+    overlay.addView(actions, params);
     addRouteOsOverlay(overlay);
   }
 
   private void saveDrawnRoute(@NonNull Location hub, @Nullable double[] destination)
   {
-    if (destination == null) { Toast.makeText(this, "Preview a destination first", Toast.LENGTH_SHORT).show(); return; }
-    EditText input = new EditText(this); input.setHint("Hub → destination name");
-    new MaterialAlertDialogBuilder(this).setTitle("Save shared route").setView(input).setNegativeButton(android.R.string.cancel, null)
-        .setPositiveButton(android.R.string.ok, (dialog, which) -> {
-          String name = input.getText().toString().trim(); if (name.isEmpty()) name = "Hub route";
-          ArrayList<Location> points = new ArrayList<>(); Location first = new Location("routeos"); first.setLatitude(hub.getLatitude()); first.setLongitude(hub.getLongitude()); points.add(first);
-          JunctionInfo[] junctions = Framework.nativeIsRouteBuilt() ? Framework.nativeGetRouteJunctionPoints(20.0) : null;
-          if (junctions != null) for (JunctionInfo junction : junctions) { Location point = new Location("routeos"); point.setLatitude(junction.mLat); point.setLongitude(junction.mLon); points.add(point); }
-          if (points.size() < 2) { Location last = new Location("routeos"); last.setLatitude(destination[0]); last.setLongitude(destination[1]); points.add(last); }
-          String savedName = name; new Thread(() -> { try { RouteOsApi.publishPoints(this, savedName, points, "Hub", "Map destination"); runOnUiThread(() -> { Toast.makeText(this, "Shared route saved", Toast.LENGTH_LONG).show(); showRouteOsHomeOverlay(); }); } catch (Exception error) { runOnUiThread(() -> Toast.makeText(this, "Save failed: " + error.getMessage(), Toast.LENGTH_LONG).show()); } }).start();
-        }).show();
+    if (destination == null)
+    {
+      Toast.makeText(this, "Preview a destination first", Toast.LENGTH_SHORT).show();
+      return;
+    }
+    EditText input = new EditText(this);
+    input.setHint("Hub → destination name");
+    new MaterialAlertDialogBuilder(this)
+        .setTitle("Save shared route")
+        .setView(input)
+        .setNegativeButton(android.R.string.cancel, null)
+        .setPositiveButton(
+            android.R.string.ok,
+            (dialog, which) -> {
+              String name = input.getText().toString().trim();
+              if (name.isEmpty())
+                name = "Hub route";
+              ArrayList<Location> points = new ArrayList<>();
+              Location first = new Location("routeos");
+              first.setLatitude(hub.getLatitude());
+              first.setLongitude(hub.getLongitude());
+              points.add(first);
+              JunctionInfo[] junctions =
+                  Framework.nativeIsRouteBuilt() ? Framework.nativeGetRouteJunctionPoints(20.0) : null;
+              if (junctions != null)
+                for (JunctionInfo junction : junctions)
+                {
+                  Location point = new Location("routeos");
+                  point.setLatitude(junction.mLat);
+                  point.setLongitude(junction.mLon);
+                  points.add(point);
+                }
+              if (points.size() < 2)
+              {
+                Location last = new Location("routeos");
+                last.setLatitude(destination[0]);
+                last.setLongitude(destination[1]);
+                points.add(last);
+              }
+              String savedName = name;
+              new Thread(() -> {
+                try
+                {
+                  RouteOsApi.publishPoints(this, savedName, points, "Hub", "Map destination");
+                  runOnUiThread(() -> {
+                    Toast.makeText(this, "Shared route saved", Toast.LENGTH_LONG).show();
+                    showRouteOsHomeOverlay();
+                  });
+                }
+                catch (Exception error)
+                {
+                  runOnUiThread(
+                      () -> Toast.makeText(this, "Save failed: " + error.getMessage(), Toast.LENGTH_LONG).show());
+                }
+              }).start();
+            })
+        .show();
   }
 
   private void showRouteOsNavigationOverlay(@NonNull String routeName)
   {
-    mRouteOsNavigation = new RouteOsNavigationOverlay(this, new RouteOsNavigationOverlay.Host()
-    {
+    mRouteOsNavigation = new RouteOsNavigationOverlay(this, new RouteOsNavigationOverlay.Host() {
       @Override
       public void routeOsEndRide()
       {
@@ -956,8 +1036,9 @@ public class MwmActivity extends BaseMwmFragmentActivity
   {
     if (mRouteOsEndingRide)
       return;
-    final long rideId = mRouteOsActiveRideId != 0 ? mRouteOsActiveRideId
-        : getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0);
+    final long rideId = mRouteOsActiveRideId != 0
+                          ? mRouteOsActiveRideId
+                          : getSharedPreferences("routeos", MODE_PRIVATE).getLong("active_ride_id", 0);
     if (rideId == 0)
     {
       finishRouteOsRide();
@@ -1198,8 +1279,9 @@ public class MwmActivity extends BaseMwmFragmentActivity
     // A consumed launch intent will not recreate any UI in processIntent().
     // Restore the RouteOS shell even for state saved by older native screens.
     return isIntentConsumed(savedInstanceState, intent)
-        || (savedInstanceState != null && (savedInstanceState.getBoolean(STATE_ROUTEOS_FLUTTER, false)
-                                         || savedInstanceState.getBoolean(STATE_ROUTEOS_UI, false)));
+ || (savedInstanceState != null
+     && (savedInstanceState.getBoolean(STATE_ROUTEOS_FLUTTER, false)
+         || savedInstanceState.getBoolean(STATE_ROUTEOS_UI, false)));
   }
 
   @SuppressLint("InlinedApi")
@@ -1658,7 +1740,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
   protected void onResume()
   {
     super.onResume();
-    if (mRouteOsFlutter != null) mRouteOsFlutter.resume();
+    if (mRouteOsFlutter != null)
+      mRouteOsFlutter.resume();
     ThemeSwitcher.INSTANCE.synchronizeApplicationTheme();
     ThemeSwitcher.INSTANCE.synchronizeMapStyle(this, mMapController.isRenderingActive());
     makeNavigationBarTransparentInLightMode();
@@ -1692,7 +1775,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   protected void onPause()
   {
-    if (mRouteOsFlutter != null) mRouteOsFlutter.pause();
+    if (mRouteOsFlutter != null)
+      mRouteOsFlutter.pause();
     if (mOnmapDownloader != null)
       mOnmapDownloader.onPause();
     MwmApplication.from(this).getSensorHelper().removeListener(this);
@@ -1749,9 +1833,11 @@ public class MwmActivity extends BaseMwmFragmentActivity
       Framework.nativeClearApiPoints();
       RouteOsTrackPreview.clear(this);
     }
-    if (mRouteOsFlutter != null) {
+    if (mRouteOsFlutter != null)
+    {
       TrackRecorder.nativeSetTrackRecordingStatsListener(null);
-      mRouteOsFlutter.destroy(); mRouteOsFlutter = null;
+      mRouteOsFlutter.destroy();
+      mRouteOsFlutter = null;
     }
     if (mRouteOsAdmin != null)
     {
@@ -1841,7 +1927,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   public void onPlacePageActivated(@NonNull PlacePageData data)
   {
-    if (mRouteOsFlutter != null && data instanceof MapObject object && object.getRoutePointInfo()!=null)
+    if (mRouteOsFlutter != null && data instanceof MapObject object && object.getRoutePointInfo() != null)
     {
       mRouteOsFlutter.pointSelected(object.getRoutePointInfo());
       return;
@@ -2188,7 +2274,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
   @Override
   public void onBuiltRoute()
   {
-    if (mRouteOsFlutter != null) mRouteOsFlutter.routeReady();
+    if (mRouteOsFlutter != null)
+      mRouteOsFlutter.routeReady();
     enforceRouteOsChrome();
     if (mRouteOsPendingRideStart)
     {
@@ -2205,7 +2292,9 @@ public class MwmActivity extends BaseMwmFragmentActivity
     mRouteOsPendingRideStart = false;
     if (mRouteOsFlutter != null)
     {
-      mRouteOsFlutter.routeFailed(lastMissingMaps.length > 0 ? "Map data required: download the regional map first" : "No road route found. Move a point closer to a road.", lastResultCode);
+      mRouteOsFlutter.routeFailed(lastMissingMaps.length > 0 ? "Map data required: download the regional map first"
+                                                             : "No road route found. Move a point closer to a road.",
+                                  lastResultCode);
       return;
     }
     if (mRouteOsUiActive)
@@ -2405,7 +2494,8 @@ public class MwmActivity extends BaseMwmFragmentActivity
 
     final RoutingInfo info = Framework.nativeGetRouteFollowingInfo();
     mNavigationController.update(info);
-    if (mRouteOsFlutter != null) mRouteOsFlutter.progress(location, info);
+    if (mRouteOsFlutter != null)
+      mRouteOsFlutter.progress(location, info);
     if (mRouteOsNavigation != null && mRouteOsUiActive)
       mRouteOsNavigation.update(info, location);
   }
@@ -2947,29 +3037,40 @@ public class MwmActivity extends BaseMwmFragmentActivity
         .setView(name)
         .setNegativeButton(android.R.string.cancel, (dialog, which) -> cancelRouteOsRecording())
         .setOnCancelListener(dialog -> cancelRouteOsRecording())
-        .setPositiveButton(android.R.string.ok, (dialog, which) -> {
-          String routeName = name.getText().toString().trim();
-          if (routeName.isEmpty()) routeName = "Recorded route";
-          final double[] nativePoints = TrackRecorder.nativeRouteOsGetRecordedPoints();
-          TrackRecorder.nativeSetTrackRecordingStatsListener(null);
-          TrackRecorder.nativeSaveTrackRecordingWithName(routeName);
-          stopTrackRecording();
-          final String savedName = routeName;
-          RouteOsRecordingSession.finish();
-          final ArrayList<Location> points = new ArrayList<>();
-          for (int i=0;i+3<nativePoints.length;i+=4)
-          {
-            Location point=new Location("organicmaps-track");point.setLatitude(nativePoints[i]);point.setLongitude(nativePoints[i+1]);
-            point.setTime((long)(nativePoints[i+2]*1000));point.setAltitude(nativePoints[i+3]);points.add(point);
-          }
-          if (points.size() < 2)
-          {
-            RouteOsRecordingSession.clear();
-            Toast.makeText(this, "Track saved locally, but there were not enough GPS points to share it.", Toast.LENGTH_LONG).show();
-            showRouteOsHomeOverlay();
-          }
-          else publishRecordedRoute(savedName, points);
-        })
+        .setPositiveButton(android.R.string.ok,
+                           (dialog, which) -> {
+                             String routeName = name.getText().toString().trim();
+                             if (routeName.isEmpty())
+                               routeName = "Recorded route";
+                             final double[] nativePoints = TrackRecorder.nativeRouteOsGetRecordedPoints();
+                             TrackRecorder.nativeSetTrackRecordingStatsListener(null);
+                             TrackRecorder.nativeSaveTrackRecordingWithName(routeName);
+                             stopTrackRecording();
+                             final String savedName = routeName;
+                             RouteOsRecordingSession.finish();
+                             final ArrayList<Location> points = new ArrayList<>();
+                             for (int i = 0; i + 3 < nativePoints.length; i += 4)
+                             {
+                               Location point = new Location("organicmaps-track");
+                               point.setLatitude(nativePoints[i]);
+                               point.setLongitude(nativePoints[i + 1]);
+                               point.setTime((long) (nativePoints[i + 2] * 1000));
+                               point.setAltitude(nativePoints[i + 3]);
+                               points.add(point);
+                             }
+                             if (points.size() < 2)
+                             {
+                               RouteOsRecordingSession.clear();
+                               Toast
+                                   .makeText(this,
+                                             "Track saved locally, but there were not enough GPS points to share it.",
+                                             Toast.LENGTH_LONG)
+                                   .show();
+                               showRouteOsHomeOverlay();
+                             }
+                             else
+                               publishRecordedRoute(savedName, points);
+                           })
         .show();
   }
 
@@ -2986,15 +3087,27 @@ public class MwmActivity extends BaseMwmFragmentActivity
     new Thread(() -> {
       try
       {
-        RouteOsApi.publish(this, name, points); RouteOsRecordingSession.clear();
-        runOnUiThread(() -> { Toast.makeText(this, "Shared route saved", Toast.LENGTH_LONG).show(); showRouteOsHomeOverlay(); });
+        RouteOsApi.publish(this, name, points);
+        RouteOsRecordingSession.clear();
+        runOnUiThread(() -> {
+          Toast.makeText(this, "Shared route saved", Toast.LENGTH_LONG).show();
+          showRouteOsHomeOverlay();
+        });
       }
       catch (Exception error)
       {
-        runOnUiThread(() -> new MaterialAlertDialogBuilder(this).setTitle("Could not share route")
-            .setMessage("The track is saved on this device. Check the backend connection and retry.")
-            .setNegativeButton("Keep local", (dialog, which) -> { RouteOsRecordingSession.clear(); showRouteOsHomeOverlay(); })
-            .setPositiveButton("Retry", (dialog, which) -> publishRecordedRoute(name, points)).show());
+        runOnUiThread(
+            ()
+                -> new MaterialAlertDialogBuilder(this)
+                       .setTitle("Could not share route")
+                       .setMessage("The track is saved on this device. Check the backend connection and retry.")
+                       .setNegativeButton("Keep local",
+                                          (dialog, which) -> {
+                                            RouteOsRecordingSession.clear();
+                                            showRouteOsHomeOverlay();
+                                          })
+                       .setPositiveButton("Retry", (dialog, which) -> publishRecordedRoute(name, points))
+                       .show());
       }
     }, "routeos-publish-track").start();
   }

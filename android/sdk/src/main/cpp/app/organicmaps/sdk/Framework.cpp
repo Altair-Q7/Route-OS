@@ -10,6 +10,7 @@
 #include "app/organicmaps/sdk/util/NetworkPolicy.hpp"
 #include "app/organicmaps/sdk/vulkan/android_vulkan_context_factory.hpp"
 
+#include "map/api_mark_point.hpp"
 #include "map/bookmark_helpers.hpp"
 #include "map/everywhere_search_params.hpp"
 #include "map/framework.hpp"
@@ -62,6 +63,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <android/api-level.h>
@@ -808,6 +811,62 @@ JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeClearApiPoints(JNIEnv * 
   frm()->GetBookmarkManager().GetEditSession().ClearGroup(UserMark::Type::API);
 }
 
+JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeRouteOsSetAdminPoints(JNIEnv * env, jclass clazz,
+                                                                              jdoubleArray coordinates,
+                                                                              jobjectArray names, jobjectArray ids)
+{
+  auto const count = env->GetArrayLength(ids);
+  CHECK_EQUAL(env->GetArrayLength(names), count, ());
+  CHECK_EQUAL(env->GetArrayLength(coordinates), count * 2, ());
+
+  std::vector<jdouble> values(static_cast<size_t>(count) * 2);
+  if (!values.empty())
+    env->GetDoubleArrayRegion(coordinates, 0, count * 2, values.data());
+
+  auto & manager = frm()->GetBookmarkManager();
+  std::unordered_map<std::string, kml::MarkId> existing;
+  auto const currentIds = manager.GetUserMarkIds(UserMark::Type::API);
+  for (auto const markId : currentIds)
+  {
+    auto const * mark = manager.GetMark<ApiMarkPoint>(markId);
+    existing.emplace(mark->GetApiID(), markId);
+  }
+
+  std::unordered_set<std::string> retained;
+  auto editSession = manager.GetEditSession();
+  editSession.SetIsVisible(UserMark::Type::API, true);
+  for (jsize index = 0; index < count; ++index)
+  {
+    auto const nameValue = static_cast<jstring>(env->GetObjectArrayElement(names, index));
+    auto const idValue = static_cast<jstring>(env->GetObjectArrayElement(ids, index));
+    auto const name = jni::ToNativeString(env, nameValue);
+    auto const id = jni::ToNativeString(env, idValue);
+    env->DeleteLocalRef(nameValue);
+    env->DeleteLocalRef(idValue);
+
+    auto const position =
+        mercator::FromLatLon(values[static_cast<size_t>(index) * 2], values[static_cast<size_t>(index) * 2 + 1]);
+    ApiMarkPoint * mark = nullptr;
+    if (auto const found = existing.find(id); found != existing.end())
+    {
+      mark = editSession.GetMarkForEdit<ApiMarkPoint>(found->second);
+      mark->SetPosition(position);
+    }
+    else
+    {
+      mark = editSession.CreateUserMark<ApiMarkPoint>(position);
+      mark->SetApiID(id);
+      mark->SetStyle(style::GetSupportedStyle("placemark-green"));
+    }
+    mark->SetName(name);
+    retained.emplace(id);
+  }
+
+  for (auto const & [id, markId] : existing)
+    if (!retained.contains(id))
+      editSession.DeleteUserMark(markId);
+}
+
 JNIEXPORT jint Java_app_organicmaps_sdk_Framework_nativeParseAndSetApiUrl(JNIEnv * env, jclass clazz, jstring url)
 {
   return static_cast<jint>(frm()->ParseAndSetApiURL(jni::ToNativeString(env, url)));
@@ -1155,8 +1214,8 @@ JNIEXPORT jdoubleArray Java_app_organicmaps_sdk_Framework_nativeGetScreenRectCen
   return jLatLon;
 }
 
-JNIEXPORT jdoubleArray Java_app_organicmaps_sdk_Framework_nativeRouteOsPixelToLatLon(JNIEnv * env, jclass,
-                                                                                    jdouble x, jdouble y)
+JNIEXPORT jdoubleArray Java_app_organicmaps_sdk_Framework_nativeRouteOsPixelToLatLon(JNIEnv * env, jclass, jdouble x,
+                                                                                     jdouble y)
 {
   auto const point = frm()->P3dtoG(m2::PointD(x, y));
   double values[] = {mercator::YToLat(point.y), mercator::XToLon(point.x)};

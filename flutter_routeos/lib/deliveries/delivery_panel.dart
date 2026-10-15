@@ -33,6 +33,107 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
   String? notice;
   int activeRideId = 0;
 
+  String syncLabel(Map assignment) {
+    final strings = AppStrings.of(context);
+    final lastError = assignment['last_error']?.toString();
+    if (lastError != null && lastError.isNotEmpty) {
+      return strings.deliveriesSyncError(lastError);
+    }
+    if (assignment['sync_pending'] == true) {
+      return strings.deliveriesSyncPending;
+    }
+    final value = assignment['last_sync']?.toString();
+    if (value == null || value.isEmpty) return strings.deliveriesSyncNotSynced;
+    try {
+      final date = DateTime.parse(value).toLocal();
+      final material = MaterialLocalizations.of(context);
+      final formatted =
+          '${material.formatMediumDate(date)} ${material.formatTimeOfDay(TimeOfDay.fromDateTime(date))}';
+      return strings.deliveriesSyncLast(formatted);
+    } catch (_) {
+      return strings.deliveriesSyncLast(value);
+    }
+  }
+
+  String shortAddress(Object? value) {
+    final lines =
+        value
+            ?.toString()
+            .split('\n')
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty)
+            .toList() ??
+        <String>[];
+    if (lines.length <= 2) return lines.join(', ');
+    return '${lines.first}, ${lines[1]}';
+  }
+
+  String statusLabel(Object? value) {
+    final strings = AppStrings.of(context);
+    switch (value?.toString().toLowerCase()) {
+      case 'pending':
+        return strings.statePending;
+      case 'arrived':
+        return strings.stateArrived;
+      case 'delivered':
+        return strings.stateDelivered;
+      case 'partial':
+        return strings.statePartial;
+      case 'failed':
+        return strings.stateFailed;
+      default:
+        return strings.stateUnknown;
+    }
+  }
+
+  String actionLabel(String status) {
+    final strings = AppStrings.of(context);
+    switch (status) {
+      case 'arrived':
+        return strings.deliveryActionArrived;
+      case 'delivered':
+        return strings.deliveryActionDelivered;
+      case 'partial':
+        return strings.deliveryActionPartial;
+      case 'failed':
+        return strings.deliveryActionFailed;
+      default:
+        return strings.deliveryActionUpdate;
+    }
+  }
+
+  bool isCompleted(Map stop) {
+    final status = stop['status']?.toString().toLowerCase();
+    return status == 'delivered' || status == 'partial' || status == 'failed';
+  }
+
+  String nextAction(Map assignment) {
+    final strings = AppStrings.of(context);
+    final stops = (assignment['stops'] as List).cast<Map>();
+    Map? next;
+    for (final stop in stops) {
+      if (!isCompleted(stop)) {
+        next = stop;
+        break;
+      }
+    }
+    if (next == null) {
+      return strings.deliveriesNextComplete;
+    }
+    final customer = '${next['customer'] ?? next['address']}';
+    if (assignment['ride_id'] == null) {
+      return widget.isAdmin
+          ? strings.deliveriesNextLinkRideAdmin
+          : strings.deliveriesNextLinkRideDriver(
+              assignment['vehicle'].toString(),
+            );
+    }
+    if (next['status'] == 'arrived') {
+      return strings.deliveriesNextConfirm(customer);
+    }
+    return strings.deliveriesNextDrive(customer);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -41,8 +142,12 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
   }
 
   Future<void> load() async {
-    final result = await widget.request('deliveries') as Map;
-    final session = await widget.request('session') as Map;
+    final results = await Future.wait([
+      widget.request('deliveries'),
+      widget.request('session'),
+    ]);
+    final result = results[0] as Map;
+    final session = results[1] as Map;
     var pendingExtras = <Map<String, dynamic>>[];
     // Admin-only; drivers simply have no extras to see.
     if (widget.isAdmin) {
@@ -88,9 +193,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
     final trips = catalog['trips'] as List;
     final drivers = catalog['drivers'] as List;
     if (trips.isEmpty || drivers.isEmpty) {
-      setState(
-        () => notice = AppStrings.of(context).deliveriesErpEmpty,
-      );
+      setState(() => notice = AppStrings.of(context).deliveriesErpEmpty);
       return;
     }
     String trip = trips.first['name'] as String;
@@ -108,7 +211,9 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                 DropdownButtonFormField<String>(
                   initialValue: trip,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'ERPNext trip'),
+                  decoration: InputDecoration(
+                    labelText: AppStrings.of(context).deliveriesErpTrip,
+                  ),
                   items: [
                     for (final item in trips)
                       DropdownMenuItem(
@@ -140,9 +245,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                   },
                 ),
                 SizedBox(height: 12),
-                Text(
-                  AppStrings.of(context).deliveriesDriverWarning,
-                ),
+                Text(AppStrings.of(context).deliveriesDriverWarning),
               ],
             ),
           ),
@@ -153,7 +256,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Assign'),
+              child: Text(AppStrings.of(context).actionAssign),
             ),
           ],
         ),
@@ -196,12 +299,10 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
               children: [
                 Text(
                   '${stop['customer'] ?? stop['address']}\n'
-                  'GPS arrival alone does not confirm delivery. Final outcomes cannot be overwritten.',
+                  '${AppStrings.of(context).deliveriesGpsNote}',
                 ),
                 if (recordsProducts && products.isEmpty)
-                  Text(
-                    AppStrings.of(context).confirmNoProducts,
-                  ),
+                  Text(AppStrings.of(context).confirmNoProducts),
                 if (recordsProducts)
                   for (final item in products)
                     TextFormField(
@@ -210,10 +311,14 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                         decimal: true,
                       ),
                       decoration: InputDecoration(
-                        labelText:
-                            '${item['product_name']} delivered (${item['uom']})',
-                        helperText:
-                            'Assigned: ${item['planned_quantity']} ${item['uom']}',
+                        labelText: AppStrings.of(context).confirmDeliveredLabel(
+                          item['product_name'].toString(),
+                          item['uom'].toString(),
+                        ),
+                        helperText: AppStrings.of(context).confirmAssigned(
+                          item['planned_quantity'].toString(),
+                          item['uom'].toString(),
+                        ),
                       ),
                       validator: (value) {
                         final qty = num.tryParse(value ?? '');
@@ -227,7 +332,9 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                             !RegExp(
                               r'^(?:[0-9]+(?:\.[0-9]{1,3})?|\.[0-9]{1,3})$',
                             ).hasMatch(value ?? '')) {
-                          return 'Enter 0 to $planned, with up to 3 decimal places';
+                          return AppStrings.of(
+                            context,
+                          ).confirmQuantityRange(planned.toString());
                         }
                         if (status == 'delivered' && qty != planned) {
                           return AppStrings.of(context).confirmUsePartial;
@@ -247,8 +354,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                       ),
                       decoration: InputDecoration(
                         labelText: AppStrings.of(context).confirmExtraLabel,
-                        helperText:
-                            AppStrings.of(context).confirmExtraHint,
+                        helperText: AppStrings.of(context).confirmExtraHint,
                       ),
                       validator: (value) {
                         final text = (value ?? '').trim();
@@ -341,8 +447,12 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
       await load();
       if (mounted) {
         setState(
-          () => notice =
-              '${extra['customer']} no longer waiting on ${extra['quantity']} ${extra['uom']} ${extra['product_name']}.',
+          () => notice = AppStrings.of(context).deliveriesExtraResolved(
+            extra['customer'].toString(),
+            extra['quantity'].toString(),
+            extra['uom'].toString(),
+            extra['product_name'].toString(),
+          ),
         );
       }
     });
@@ -352,8 +462,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
   Future<void> transfer(Map<String, dynamic> assignment) async {
     final pending = [
       for (final stop in assignment['stops'] as List)
-        if ((stop['status'] == 'pending' || stop['status'] == 'arrived'))
-          stop,
+        if ((stop['status'] == 'pending' || stop['status'] == 'arrived')) stop,
     ];
     if (pending.length < 2) {
       setState(() => notice = AppStrings.of(context).transferNeedsTwoStops);
@@ -377,38 +486,43 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                AppStrings.of(context).transferHint,
-              ),
+              Text(AppStrings.of(context).transferHint),
               SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: from['id'],
                 isExpanded: true,
-                decoration: InputDecoration(labelText: AppStrings.of(context).transferFrom),
+                decoration: InputDecoration(
+                  labelText: AppStrings.of(context).transferFrom,
+                ),
                 items: [
                   for (final stop in pending)
                     DropdownMenuItem(
                       value: stop['id'],
-                      child: Text('${stop['customer']}',
-                          overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        '${stop['customer']}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                 ],
                 onChanged: (value) => update(() {
                   from = pending.firstWhere((stop) => stop['id'] == value);
                   chosen = (from['items'] as List).first;
-
                 }),
               ),
               DropdownButtonFormField<String>(
                 initialValue: to['id'],
                 isExpanded: true,
-                decoration: InputDecoration(labelText: AppStrings.of(context).transferTo),
+                decoration: InputDecoration(
+                  labelText: AppStrings.of(context).transferTo,
+                ),
                 items: [
                   for (final stop in pending)
                     DropdownMenuItem(
                       value: stop['id'],
-                      child: Text('${stop['customer']}',
-                          overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        '${stop['customer']}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                 ],
                 onChanged: (value) => update(
@@ -418,13 +532,19 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
               DropdownButtonFormField<String>(
                 initialValue: chosen['product_name'].toString(),
                 isExpanded: true,
-                decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderProduct),
+                decoration: InputDecoration(
+                  labelText: AppStrings.of(context).tripBuilderProduct,
+                ),
                 items: [
                   for (final item in products)
                     DropdownMenuItem(
                       value: item['product_name'].toString(),
                       child: Text(
-                        '${item['product_name']} (planned ${item['planned_quantity']} ${item['uom']})',
+                        AppStrings.of(context).transferProductOption(
+                          item['product_name'].toString(),
+                          item['planned_quantity'].toString(),
+                          item['uom'].toString(),
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -433,15 +553,17 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                   chosen = products.firstWhere(
                     (item) => item['product_name'].toString() == value,
                   );
-
                 }),
               ),
               TextField(
                 controller: quantity,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
-                  labelText: 'How much to move (${chosen['uom']})',
+                  labelText: AppStrings.of(
+                    context,
+                  ).transferQuantity(chosen['uom'].toString()),
                 ),
               ),
             ],
@@ -456,7 +578,9 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                 final amount = double.tryParse(quantity.text.trim());
                 if (amount == null || amount <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(AppStrings.of(context).transferPositive)),
+                    SnackBar(
+                      content: Text(AppStrings.of(context).transferPositive),
+                    ),
                   );
                   return;
                 }
@@ -512,9 +636,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    AppStrings.of(context).deliveriesAssignHint,
-                  ),
+                  Text(AppStrings.of(context).deliveriesAssignHint),
                   for (int i = 0; i < rows.length; i++)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
@@ -524,7 +646,8 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                             initialValue: rows[i]['product_name'],
                             maxLength: 140,
                             decoration: InputDecoration(
-                              labelText: 'Product ${i + 1}',
+                              labelText:
+                                  '${AppStrings.of(context).tripBuilderProduct} ${i + 1}',
                             ),
                             validator: (value) => (value ?? '').trim().isEmpty
                                 ? AppStrings.of(context).tripBuilderProduct
@@ -538,7 +661,9 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                               decimal: true,
                             ),
                             decoration: InputDecoration(
-                              labelText: AppStrings.of(context).tripBuilderQuantity,
+                              labelText: AppStrings.of(
+                                context,
+                              ).tripBuilderQuantity,
                             ),
                             validator: (value) {
                               final qty = num.tryParse(value ?? '');
@@ -553,10 +678,12 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                             initialValue: rows[i]['uom'],
                             maxLength: 40,
                             decoration: InputDecoration(
-                              labelText: AppStrings.of(context).deliveriesUnitLabel,
+                              labelText: AppStrings.of(
+                                context,
+                              ).deliveriesUnitLabel,
                             ),
                             validator: (value) => (value ?? '').trim().isEmpty
-                                ? 'Enter a unit'
+                                ? AppStrings.of(context).tripBuilderEnterUnit
                                 : null,
                             onChanged: (value) => rows[i]['uom'] = value.trim(),
                           ),
@@ -593,7 +720,7 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
               onPressed: () {
                 if (form.currentState!.validate()) Navigator.pop(context, true);
               },
-              child: const Text('Save products'),
+              child: Text(AppStrings.of(context).actionSave),
             ),
           ],
         ),
@@ -637,19 +764,21 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                     : () async {
                         final created = await Navigator.of(context).push<bool>(
                           MaterialPageRoute(
-                            builder: (_) => TripBuilder(request: widget.request),
+                            builder: (_) =>
+                                TripBuilder(request: widget.request),
                           ),
                         );
                         if (created == true && mounted) {
                           setState(
-                            () => notice =
-                                'Trip created and assigned to the driver.',
+                            () => notice = AppStrings.of(
+                              context,
+                            ).tripBuilderCreated,
                           );
                           await load();
                         }
                       },
                 icon: const Icon(Icons.add),
-                label: Text('Create trip'),
+                label: Text(AppStrings.of(context).deliveriesCreateTrip),
               ),
               FilledButton.icon(
                 onPressed: loading ? null : () => perform(importTrip),
@@ -666,10 +795,13 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                         if (mounted) {
                           setState(
                             () => notice = result['queued'] == true
-                                ? 'Sync queued. It runs within 30 seconds; refresh to see the result.'
+                                ? AppStrings.of(context).deliveriesSyncQueued
                                 : result['busy'] == true
                                 ? AppStrings.of(context).deliveriesSyncBusy
-                                : '${result['synced']} synced, ${result['failed']} failed. Failed updates are kept for retry.',
+                                : AppStrings.of(context).deliveriesSyncCounts(
+                                    (result['synced'] as num).toInt(),
+                                    (result['failed'] as num).toInt(),
+                                  ),
                           );
                         }
                       }),
@@ -679,11 +811,11 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                 onPressed: loading
                     ? null
                     : () => Navigator.of(context).push<void>(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                SupermarketDirectory(request: widget.request),
-                          ),
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              SupermarketDirectory(request: widget.request),
                         ),
+                      ),
                 icon: const Icon(Icons.storefront_outlined),
                 label: Text(AppStrings.of(context).shopTitle),
               ),
@@ -691,10 +823,11 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                 onPressed: loading
                     ? null
                     : () => Navigator.of(context).push<void>(
-                          MaterialPageRoute(
-                            builder: (_) => DeliveryReports(request: widget.request),
-                          ),
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              DeliveryReports(request: widget.request),
                         ),
+                      ),
                 icon: const Icon(Icons.assessment_outlined),
                 label: Text(AppStrings.of(context).reportsTitle),
               ),
@@ -706,28 +839,36 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
             children: [
               if (widget.isAdmin && extras.isNotEmpty) ...[
                 Text(
-                  'Extra requested by shops',
+                  AppStrings.of(context).deliveriesExtraTitle,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                Text(
-                  AppStrings.of(context).deliveriesExtraHint,
-                ),
+                Text(AppStrings.of(context).deliveriesExtraHint),
                 SizedBox(height: 8),
                 for (final extra in extras)
                   Card(
                     child: ListTile(
                       title: Text(
-                        '${extra['customer']} asked for ${extra['quantity']} ${extra['uom']} '
-                        '${extra['product_name']}',
+                        AppStrings.of(context).deliveriesExtraRequest(
+                          extra['customer'].toString(),
+                          extra['quantity'].toString(),
+                          extra['uom'].toString(),
+                          extra['product_name'].toString(),
+                        ),
                       ),
                       subtitle: Text(
                         extra['requests'] == 1
                             ? AppStrings.of(context).deliveriesExtraRecorded
-                            : 'Recorded ${extra['requests']} times',
+                            : AppStrings.of(
+                                context,
+                              ).deliveriesExtraRecordedMany(
+                                (extra['requests'] as num).toInt(),
+                              ),
                       ),
                       trailing: TextButton(
                         onPressed: loading ? null : () => resolveExtras(extra),
-                        child: Text('Planned'),
+                        child: Text(
+                          AppStrings.of(context).deliveriesExtraPlanned,
+                        ),
                       ),
                     ),
                   ),
@@ -735,10 +876,8 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
               ],
               if (assignments.isEmpty && !loading)
                 ListTile(
-                  title: Text('No delivery assignments'),
-                  subtitle: Text(
-                    AppStrings.of(context).deliveriesEmptyHint,
-                  ),
+                  title: Text(AppStrings.of(context).deliveriesEmpty),
+                  subtitle: Text(AppStrings.of(context).deliveriesEmptyHint),
                 ),
               for (final assignment in assignments)
                 Card(
@@ -754,16 +893,46 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                         Text(
                           '${assignment['driver_name']} · ${assignment['vehicle']}',
                         ),
+                        Text(syncLabel(assignment)),
                         Text(
-                          'ERP sync: ${assignment['last_error'] ?? (assignment['sync_pending'] == true ? 'Pending' : assignment['last_sync'] ?? 'Not synced')}',
+                          AppStrings.of(context).deliveriesStopsCompleted(
+                            (assignment['stops'] as List)
+                                .where((stop) => isCompleted(stop as Map))
+                                .length,
+                            (assignment['stops'] as List).length,
+                          ),
                         ),
+                        Text(nextAction(assignment)),
                         if (assignment['location'] != null)
-                          Text(
-                            'Last GPS: ${assignment['location']['latitude']}, ${assignment['location']['longitude']}\n'
-                            'Recorded: ${assignment['location']['recorded_at']}',
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: AppStrings.of(context)
+                                      .deliveriesLastGps(
+                                        assignment['location']['latitude']
+                                            .toString(),
+                                        assignment['location']['longitude']
+                                            .toString(),
+                                      ),
+                                ),
+                                const TextSpan(text: '\n'),
+                                TextSpan(
+                                  text: AppStrings.of(context)
+                                      .deliveriesRecordedAt(
+                                        assignment['location']['recorded_at']
+                                            .toString(),
+                                      ),
+                                ),
+                              ],
+                            ),
                           ),
                         if (assignment['ride'] != null)
-                          Text('Ride: ${assignment['ride']['status']}'),
+                          Text(
+                            AppStrings.of(context).deliveriesRide(
+                              assignment['ride']['status'].toString(),
+                            ),
+                          ),
                         if (assignment['ride_id'] == null && !widget.isAdmin)
                           OutlinedButton(
                             onPressed: loading || activeRideId == 0
@@ -775,11 +944,9 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                                     });
                                     await load();
                                   }),
-                            child: Text(AppStrings.of(context).deliveriesLinkRide),
-                          ),
-                        if (assignment['ride_id'] == null)
-                          Text(
-                            'Driver: start a saved route using the ERP vehicle number, then link the ride here.',
+                            child: Text(
+                              AppStrings.of(context).deliveriesLinkRide,
+                            ),
                           ),
                         if ((assignment['surplus'] as List? ?? []).isNotEmpty &&
                             assignment['ride_id'] == null)
@@ -789,85 +956,141 @@ class _DeliveryPanelState extends State<DeliveryPanel> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    'Still to hand over: ${(assignment['surplus'] as List).map((item) => '${item['quantity']} ${item['uom']} ${item['product_name']}').join(', ')}',
-                                    style: Theme.of(context).textTheme.bodySmall,
+                                    AppStrings.of(
+                                      context,
+                                    ).deliveriesStillToHandOver(
+                                      (assignment['surplus'] as List)
+                                          .map(
+                                            (item) =>
+                                                '${item['quantity']} ${item['uom']} ${item['product_name']}',
+                                          )
+                                          .join(', '),
+                                    ),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
                                   ),
                                 ),
                                 TextButton(
                                   onPressed: loading
                                       ? null
-                                      : () => perform(
-                                            () => transfer(assignment),
-                                          ),
-                                  child: Text(AppStrings.of(context).deliveriesMoveBatter),
+                                      : () =>
+                                            perform(() => transfer(assignment)),
+                                  child: Text(
+                                    AppStrings.of(context).deliveriesMoveBatter,
+                                  ),
                                 ),
                               ],
                             ),
                           ),
                         for (final stop in assignment['stops'] as List)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${stop['customer'] ?? stop['address']} · ${stop['status']}',
-                                ),
-                                Text('${stop['address_text'] ?? ''}'),
-                                if (stop['delivery_note'] != null)
-                                  Text(
-                                    'Delivery Note: ${stop['delivery_note']}',
-                                  ),
-                                for (final item in stop['items'] as List? ?? [])
-                                  Text(
-                                    '${item['product_name']}: ${item['delivered_quantity']} / '
-                                    '${item['planned_quantity']} ${item['uom']} delivered',
-                                  ),
-                                if (widget.isAdmin &&
-                                    assignment['ride_id'] == null &&
-                                    stop['status'] == 'pending' &&
-                                    stop['delivery_note'] == null)
-                                  OutlinedButton(
-                                    onPressed: loading
-                                        ? null
-                                        : () => perform(
-                                            () => assignProducts(
-                                              assignment,
-                                              stop as Map,
-                                            ),
-                                          ),
-                                    child: Text(AppStrings.of(context).deliveriesAssignProducts),
-                                  ),
-                                if ((stop['reason'] as String).isNotEmpty)
-                                  Text('Reason: ${stop['reason']}'),
-                                if (assignment['ride_id'] != null &&
-                                    stop['status'] != 'delivered' &&
-                                    stop['status'] != 'partial' &&
-                                    stop['status'] != 'failed')
-                                  Wrap(
-                                    spacing: 8,
+                          Card(
+                            margin: const EdgeInsets.only(top: 12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      for (final status in [
-                                        'arrived',
-                                        'delivered',
-                                        'partial',
-                                        'failed',
-                                      ])
-                                        OutlinedButton(
-                                          onPressed: loading
-                                              ? null
-                                              : () => perform(
-                                                  () => confirmStop(
-                                                    assignment,
-                                                    stop as Map,
-                                                    status,
-                                                  ),
-                                                ),
-                                          child: Text(status),
+                                      Expanded(
+                                        child: Text(
+                                          '${stop['customer'] ?? stop['address']}',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleSmall,
                                         ),
+                                      ),
+                                      Chip(
+                                        label: Text(
+                                          statusLabel(stop['status']),
+                                        ),
+                                      ),
                                     ],
                                   ),
-                              ],
+                                  if (shortAddress(
+                                    stop['address_text'],
+                                  ).isNotEmpty)
+                                    Text(
+                                      shortAddress(stop['address_text']),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  if (stop['delivery_note'] != null)
+                                    Text(
+                                      AppStrings.of(context).deliveriesNote(
+                                        stop['delivery_note'].toString(),
+                                      ),
+                                    ),
+                                  for (final item
+                                      in stop['items'] as List? ?? [])
+                                    Text(
+                                      AppStrings.of(
+                                        context,
+                                      ).confirmDeliveredSummary(
+                                        item['product_name'].toString(),
+                                        item['delivered_quantity'].toString(),
+                                        item['planned_quantity'].toString(),
+                                        item['uom'].toString(),
+                                      ),
+                                    ),
+                                  if (widget.isAdmin &&
+                                      assignment['ride_id'] == null &&
+                                      stop['status'] == 'pending' &&
+                                      stop['delivery_note'] == null)
+                                    OutlinedButton(
+                                      onPressed: loading
+                                          ? null
+                                          : () => perform(
+                                              () => assignProducts(
+                                                assignment,
+                                                stop as Map,
+                                              ),
+                                            ),
+                                      child: Text(
+                                        AppStrings.of(
+                                          context,
+                                        ).deliveriesAssignProducts,
+                                      ),
+                                    ),
+                                  if ((stop['reason'] as String).isNotEmpty)
+                                    Text(
+                                      AppStrings.of(context).deliveriesReason(
+                                        stop['reason'].toString(),
+                                      ),
+                                    ),
+                                  if (assignment['ride_id'] != null &&
+                                      stop['status'] != 'delivered' &&
+                                      stop['status'] != 'partial' &&
+                                      stop['status'] != 'failed')
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        for (final status in [
+                                          'arrived',
+                                          'delivered',
+                                          'partial',
+                                          'failed',
+                                        ])
+                                          OutlinedButton(
+                                            onPressed: loading
+                                                ? null
+                                                : () => perform(
+                                                    () => confirmStop(
+                                                      assignment,
+                                                      stop as Map,
+                                                      status,
+                                                    ),
+                                                  ),
+                                            child: Text(actionLabel(status)),
+                                          ),
+                                      ],
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                       ],

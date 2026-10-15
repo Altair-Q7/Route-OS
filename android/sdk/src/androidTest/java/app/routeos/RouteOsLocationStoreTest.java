@@ -56,4 +56,18 @@ public class RouteOsLocationStoreTest
     assertEquals(RouteOsLocationStore.MAX_SAMPLES, mStore.count("https://one.example", 1));
     assertEquals(RouteOsLocationStore.MAX_SAMPLES, mStore.newest("https://one.example", 1).body().getInt("number"));
   }
+
+  @Test
+  public void batchStaysOnNewestRideAndCanBeAcknowledgedTogether() throws Exception
+  {
+    mStore.enqueue("https://one.example", 1, 7, new JSONObject().put("sample_id", "old-ride"));
+    mStore.enqueue("https://one.example", 1, 8, new JSONObject().put("sample_id", "first"));
+    mStore.enqueue("https://one.example", 1, 8, new JSONObject().put("sample_id", "second"));
+    var batch = mStore.newestBatch("https://one.example", 1, 20);
+    assertEquals(2, batch.size());
+    assertEquals(8, batch.get(0).rideId());
+    assertEquals("second", batch.get(0).body().getString("sample_id"));
+    mStore.acknowledge(batch);
+    assertEquals("old-ride", mStore.newest("https://one.example", 1).body().getString("sample_id"));
+  }
 }

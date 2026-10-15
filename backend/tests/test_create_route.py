@@ -6,6 +6,7 @@ from contextlib import closing
 from datetime import datetime
 
 from app import connection, initialize_database
+import app as routeos_app
 
 from conftest import api, auth_headers
 
@@ -69,6 +70,57 @@ def test_listed_routes_keep_route_type_and_created_at_in_their_columns():
         for route in listed:
             assert route["route_type"] in {"recorded", "drawn"}
             datetime.fromisoformat(route["created_at"])
+
+
+def test_get_route_uses_persisted_stats_for_recorded_tracks(monkeypatch):
+    with api() as client:
+        user, created = _create_route(client, "Cached stats route", "recorded")
+
+        def unexpected_recalculation(_points):
+            raise AssertionError("recorded route stats should be read from the database")
+
+        monkeypatch.setattr(routeos_app, "route_stats", unexpected_recalculation)
+        response = client.get(f"/api/v1/routes/{created['id']}", headers=auth_headers(user))
+
+        assert response.status_code == 200, response.text
+        route = response.json()
+        assert route["point_count"] == 2
+        assert route["distance_meters"] > 0
+        assert route["duration_seconds"] == 600
+        assert "saved_distance" not in route
+        assert "saved_duration" not in route
+
+
+def test_recorded_route_preview_is_bounded_and_preserves_endpoints():
+    with api() as client:
+        user = client.post("/api/v1/users", json={"name": "Preview Driver"}).json()
+        headers = auth_headers(user)
+        points = [
+            {
+                "latitude": 10 + index / 100_000,
+                "longitude": 77 + index / 100_000,
+                "timestamp": f"2026-01-01T00:{index // 60:02d}:{index % 60:02d}Z",
+            }
+            for index in range(120)
+        ]
+        track = client.post("/api/v1/tracks", headers=headers, json={
+            "recorder_id": user["id"], "points": points,
+        }).json()
+        route = client.post("/api/v1/routes", headers=headers, json={
+            "name": "Preview route", "recorder_id": user["id"], "track_id": track["id"],
+            "route_type": "recorded",
+        }).json()
+
+        preview = client.get(
+            f"/api/v1/routes/{route['id']}?max_points=10", headers=headers
+        ).json()
+        assert preview["point_count"] == len(points)
+        assert len(preview["points"]) == 10
+        assert preview["points"][0]["latitude"] == points[0]["latitude"]
+        assert preview["points"][-1]["latitude"] == points[-1]["latitude"]
+
+        full = client.get(f"/api/v1/routes/{route['id']}", headers=headers).json()
+        assert len(full["points"]) == len(points)
 
 
 def test_initialize_database_repairs_swapped_columns():

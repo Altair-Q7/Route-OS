@@ -26,6 +26,8 @@ public:
   std::string const & GetApiID() const { return m_id; }
   void SetApiID(std::string const & id);
 
+  void SetPosition(m2::PointD const & position);
+
   void SetStyle(df::ColorConstant style);
   df::ColorConstant GetStyle() const { return m_style; }
 

@@ -16,9 +16,10 @@ void main() {
     'latitude': 9.93,
     'longitude': 76.27,
     'active': active,
-    'standing_order': order ??
+    'standing_order':
+        order ??
         [
-          {'product_name': 'Idli Batter', 'uom': 'packet', 'quantity': '5'}
+          {'product_name': 'Idli Batter', 'uom': 'packet', 'quantity': '5'},
         ],
   };
 
@@ -41,11 +42,15 @@ void main() {
     await open(
       tester,
       (method, [data = const {}]) async => listing([
-            shop('Metro Fresh'),
-            shop('City Mart', active: 0, order: [
-              {'product_name': 'Dosa Batter', 'uom': 'kg', 'quantity': '10'}
-            ]),
-          ]),
+        shop('Metro Fresh'),
+        shop(
+          'City Mart',
+          active: 0,
+          order: [
+            {'product_name': 'Dosa Batter', 'uom': 'kg', 'quantity': '10'},
+          ],
+        ),
+      ]),
     );
 
     expect(find.text('Metro Fresh'), findsOneWidget);
@@ -68,16 +73,13 @@ void main() {
     tester,
   ) async {
     Map<String, dynamic>? created;
-    await open(
-      tester,
-      (method, [data = const {}]) async {
-        if (method == 'supermarket.create') {
-          created = data;
-          return shop('Metro Fresh');
-        }
-        return listing([shop('Metro Fresh')]);
-      },
-    );
+    await open(tester, (method, [data = const {}]) async {
+      if (method == 'supermarket.create') {
+        created = data;
+        return shop('Metro Fresh');
+      }
+      return listing([shop('Metro Fresh')]);
+    });
 
     await tester.tap(find.text('Add supermarket'));
     await tester.pumpAndSettle();
@@ -85,10 +87,16 @@ void main() {
       find.widgetWithText(TextFormField, 'Supermarket name'),
       'City Mart',
     );
-    await tester.enterText(find.widgetWithText(TextFormField, 'Address'), 'MG Road');
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Address'),
+      'MG Road',
+    );
     await tester.tap(find.text('Add product'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextFormField, 'Product'), 'Dosa Batter');
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Product'),
+      'Dosa Batter',
+    );
     await tester.enterText(find.widgetWithText(TextFormField, 'Qty'), '10');
     await tester.enterText(find.widgetWithText(TextFormField, 'Unit'), 'kg');
     await tester.tap(find.text('Save'));
@@ -104,13 +112,10 @@ void main() {
 
   testWidgets('editing a supermarket sends its id', (tester) async {
     Map<String, dynamic>? updated;
-    await open(
-      tester,
-      (method, [data = const {}]) async {
-        if (method == 'supermarket.update') updated = data;
-        return listing([shop('Metro Fresh')]);
-      },
-    );
+    await open(tester, (method, [data = const {}]) async {
+      if (method == 'supermarket.update') updated = data;
+      return listing([shop('Metro Fresh')]);
+    });
 
     await tester.tap(find.text('Metro Fresh'));
     await tester.pumpAndSettle();
@@ -132,13 +137,10 @@ void main() {
 
   testWidgets('a shop cannot be saved without a name', (tester) async {
     var created = false;
-    await open(
-      tester,
-      (method, [data = const {}]) async {
-        if (method == 'supermarket.create') created = true;
-        return listing([]);
-      },
-    );
+    await open(tester, (method, [data = const {}]) async {
+      if (method == 'supermarket.create') created = true;
+      return listing([]);
+    });
     await tester.tap(find.text('Add supermarket'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
@@ -151,13 +153,10 @@ void main() {
     tester,
   ) async {
     var created = false;
-    await open(
-      tester,
-      (method, [data = const {}]) async {
-        if (method == 'supermarket.create') created = true;
-        return listing([]);
-      },
-    );
+    await open(tester, (method, [data = const {}]) async {
+      if (method == 'supermarket.create') created = true;
+      return listing([]);
+    });
     await tester.tap(find.text('Add supermarket'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -166,23 +165,25 @@ void main() {
     );
     await tester.tap(find.text('Add product'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextFormField, 'Product'), 'Dosa Batter');
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Product'),
+      'Dosa Batter',
+    );
     await tester.enterText(find.widgetWithText(TextFormField, 'Qty'), '0');
     await tester.tap(find.text('Save'));
     await tester.pump();
     expect(created, isFalse);
   });
 
-  testWidgets('a duplicate name is reported and kept on screen', (tester) async {
-    await open(
-      tester,
-      (method, [data = const {}]) async {
-        if (method == 'supermarket.create') {
-          throw StateError('That supermarket is already in the directory');
-        }
-        return listing([shop('Metro Fresh')]);
-      },
-    );
+  testWidgets('a duplicate name is reported and kept on screen', (
+    tester,
+  ) async {
+    await open(tester, (method, [data = const {}]) async {
+      if (method == 'supermarket.create') {
+        throw StateError('That supermarket is already in the directory');
+      }
+      return listing([shop('Metro Fresh')]);
+    });
     await tester.tap(find.text('Add supermarket'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -196,13 +197,10 @@ void main() {
 
   testWidgets('a load failure can be retried', (tester) async {
     var failing = true;
-    await open(
-      tester,
-      (method, [data = const {}]) async {
-        if (failing) throw StateError('server unreachable');
-        return listing([shop('Metro Fresh')]);
-      },
-    );
+    await open(tester, (method, [data = const {}]) async {
+      if (failing) throw StateError('server unreachable');
+      return listing([shop('Metro Fresh')]);
+    });
     expect(find.textContaining('server unreachable'), findsOneWidget);
     failing = false;
     await tester.tap(find.byTooltip('Refresh supermarkets'));

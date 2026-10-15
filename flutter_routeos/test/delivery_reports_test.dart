@@ -10,47 +10,58 @@ void main() {
     String status = 'Delivered',
     List<Map<String, dynamic>>? stops,
   }) => {
-        'id': 1,
-        'trip': reference,
-        'status': status,
-        'driver_name': driver,
-        'vehicle': 'KL-07-AX-1234',
-        'updated_at': '2026-10-12T09:00:00+00:00',
-        'surplus': <Map<String, dynamic>>[],
-        'stops': stops ??
-            [
+    'id': 1,
+    'trip': reference,
+    'status': status,
+    'driver_name': driver,
+    'vehicle': 'KL-07-AX-1234',
+    'updated_at': '2026-10-12T09:00:00+00:00',
+    'surplus': <Map<String, dynamic>>[],
+    'stops':
+        stops ??
+        [
+          {
+            'id': 'S1',
+            'customer': 'Metro Fresh',
+            'status': 'delivered',
+            'reason': '',
+            'items': [
               {
-                'id': 'S1',
-                'customer': 'Metro Fresh',
-                'status': 'delivered',
-                'reason': '',
-                'items': [
-                  {
-                    'product_name': 'Idli Batter',
-                    'uom': 'packet',
-                    'planned_quantity': '5',
-                    'delivered_quantity': '5',
-                  }
-                ],
-              }
+                'product_name': 'Idli Batter',
+                'uom': 'packet',
+                'planned_quantity': '5',
+                'delivered_quantity': '5',
+              },
             ],
-      };
+          },
+        ],
+  };
 
   Future<dynamic> Function(String, [Map<String, dynamic>]) responder(
-        Map<String, dynamic> payload) =>
-    (String method, [Map<String, dynamic> data = const {}]) async =>
-        method == 'reports.deliveries' ? payload : <String, dynamic>{};
+    Map<String, dynamic> payload,
+  ) =>
+      (String method, [Map<String, dynamic> data = const {}]) async =>
+          method == 'reports.deliveries' ? payload : <String, dynamic>{};
 
   testWidgets('shows product totals and trips', (tester) async {
-    await tester.pumpWidget(wrapForTest(DeliveryReports(
-      request: responder({
-        'trips': [trip()],
-        'product_totals': [
-          {'product_name': 'Idli Batter', 'uom': 'packet', 'planned_quantity': '10', 'delivered_quantity': '10'}
-        ],
-        'shortages': <Map<String, dynamic>>[],
-      }),
-    )));
+    await tester.pumpWidget(
+      wrapForTest(
+        DeliveryReports(
+          request: responder({
+            'trips': [trip()],
+            'product_totals': [
+              {
+                'product_name': 'Idli Batter',
+                'uom': 'packet',
+                'planned_quantity': '10',
+                'delivered_quantity': '10',
+              },
+            ],
+            'shortages': <Map<String, dynamic>>[],
+          }),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Totals by product'), findsOneWidget);
@@ -63,16 +74,43 @@ void main() {
   });
 
   testWidgets('a shortage is called out with the reason', (tester) async {
-    await tester.pumpWidget(wrapForTest(DeliveryReports(
-      request: responder({
-        'trips': [
-          trip(
-            status: 'Closed with shortages',
-            stops: [
+    await tester.pumpWidget(
+      wrapForTest(
+        DeliveryReports(
+          request: responder({
+            'trips': [
+              trip(
+                status: 'Closed with shortages',
+                stops: [
+                  {
+                    'id': 'S1',
+                    'customer': 'Metro Fresh',
+                    'status': 'partial',
+                    'reason': 'Shop had no storage',
+                    'items': [
+                      {
+                        'product_name': 'Dosa Batter',
+                        'uom': 'kg',
+                        'planned_quantity': '25',
+                        'delivered_quantity': '22',
+                      },
+                    ],
+                  },
+                ],
+              ),
+            ],
+            'product_totals': [
               {
-                'id': 'S1',
+                'product_name': 'Dosa Batter',
+                'uom': 'kg',
+                'planned_quantity': '25',
+                'delivered_quantity': '22',
+              },
+            ],
+            'shortages': [
+              {
+                'trip': 'SAP-TRIP-1',
                 'customer': 'Metro Fresh',
-                'status': 'partial',
                 'reason': 'Shop had no storage',
                 'items': [
                   {
@@ -80,32 +118,14 @@ void main() {
                     'uom': 'kg',
                     'planned_quantity': '25',
                     'delivered_quantity': '22',
-                  }
+                  },
                 ],
-              }
+              },
             ],
-          )
-        ],
-        'product_totals': [
-          {'product_name': 'Dosa Batter', 'uom': 'kg', 'planned_quantity': '25', 'delivered_quantity': '22'}
-        ],
-        'shortages': [
-          {
-            'trip': 'SAP-TRIP-1',
-            'customer': 'Metro Fresh',
-            'reason': 'Shop had no storage',
-            'items': [
-              {
-                'product_name': 'Dosa Batter',
-                'uom': 'kg',
-                'planned_quantity': '25',
-                'delivered_quantity': '22',
-              }
-            ],
-          }
-        ],
-      }),
-    )));
+          }),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Shortages and failures'), findsOneWidget);
@@ -118,30 +138,39 @@ void main() {
   testWidgets('an empty history says so rather than showing a blank screen', (
     tester,
   ) async {
-    await tester.pumpWidget(wrapForTest(DeliveryReports(
-      request: responder({
-        'trips': <Map<String, dynamic>>[],
-        'product_totals': <Map<String, dynamic>>[],
-        'shortages': <Map<String, dynamic>>[],
-      }),
-    )));
+    await tester.pumpWidget(
+      wrapForTest(
+        DeliveryReports(
+          request: responder({
+            'trips': <Map<String, dynamic>>[],
+            'product_totals': <Map<String, dynamic>>[],
+            'shortages': <Map<String, dynamic>>[],
+          }),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('No deliveries recorded yet.'), findsOneWidget);
   });
 
   testWidgets('a failure can be retried', (tester) async {
     var failing = true;
-    await tester.pumpWidget(wrapForTest(DeliveryReports(
-      request: (String method, [Map<String, dynamic> data = const {}]) async {
-        if (method != 'reports.deliveries') return {};
-        if (failing) throw StateError('server unreachable');
-        return {
-          'trips': [trip()],
-          'product_totals': <Map<String, dynamic>>[],
-          'shortages': <Map<String, dynamic>>[],
-        };
-      },
-    )));
+    await tester.pumpWidget(
+      wrapForTest(
+        DeliveryReports(
+          request:
+              (String method, [Map<String, dynamic> data = const {}]) async {
+                if (method != 'reports.deliveries') return {};
+                if (failing) throw StateError('server unreachable');
+                return {
+                  'trips': [trip()],
+                  'product_totals': <Map<String, dynamic>>[],
+                  'shortages': <Map<String, dynamic>>[],
+                };
+              },
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.textContaining('server unreachable'), findsOneWidget);
 
@@ -153,14 +182,18 @@ void main() {
   });
 
   testWidgets('the report renders in Arabic', (tester) async {
-    await tester.pumpWidget(wrapForTest(
-      DeliveryReports(request: responder({
-        'trips': [trip()],
-        'product_totals': <Map<String, dynamic>>[],
-        'shortages': <Map<String, dynamic>>[],
-      })),
-      deviceLanguage: 'ar',
-    ));
+    await tester.pumpWidget(
+      wrapForTest(
+        DeliveryReports(
+          request: responder({
+            'trips': [trip()],
+            'product_totals': <Map<String, dynamic>>[],
+            'shortages': <Map<String, dynamic>>[],
+          }),
+        ),
+        deviceLanguage: 'ar',
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('تقارير التسليم'), findsOneWidget);
     expect(find.text('الإجماليات حسب المنتج'), findsNothing);

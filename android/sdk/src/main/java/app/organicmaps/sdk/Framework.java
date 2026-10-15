@@ -172,6 +172,8 @@ public class Framework
   }
 
   public static native void nativeClearApiPoints();
+  public static native void nativeRouteOsSetAdminPoints(@NonNull double[] coordinates, @NonNull String[] names,
+                                                        @NonNull String[] ids);
 
   @NonNull
   public static native @RequestType int nativeParseAndSetApiUrl(String url);

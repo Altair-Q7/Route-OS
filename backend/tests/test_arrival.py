@@ -33,6 +33,7 @@ def test_drawn_route_arrival_uses_destination_and_requires_fresh_location(tmp_pa
         assert client.post(path + "/locations", json=location, headers=headers).json()["arrived"] is True
         with closing(routeos_app.connection()) as db, db:
             db.execute("UPDATE live_locations SET recorded_at='2000-01-01T00:00:00+00:00' WHERE ride_id=?", (ride["id"],))
+            db.execute("UPDATE latest_locations SET recorded_at='2000-01-01T00:00:00+00:00' WHERE ride_id=?", (ride["id"],))
         assert client.post(path + "/arrive", json={"driver_id": user["id"]}, headers=headers).status_code == 409
         client.post(path + "/locations", json=location, headers=headers)
         result = client.post(path + "/arrive", json={"driver_id": user["id"]}, headers=headers)

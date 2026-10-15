@@ -86,7 +86,8 @@ void main() {
     }
 
     await tester.pumpWidget(
-      wrapForTest(DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
+      wrapForTest(
+        DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -102,9 +103,7 @@ void main() {
     expect(find.text('Extra requested by shops'), findsNothing);
   });
 
-  testWidgets('drivers are never shown the extra-request list', (
-    tester,
-  ) async {
+  testWidgets('drivers are never shown the extra-request list', (tester) async {
     final calls = <String>[];
     Future<dynamic> request(
       String method, [
@@ -113,11 +112,14 @@ void main() {
       calls.add(method);
       if (method == 'session') return {};
       if (method == 'delivery.extras') return {'extras': []};
-      return {'assignments': [assignment]};
+      return {
+        'assignments': [assignment],
+      };
     }
 
     await tester.pumpWidget(
-      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 0),
+      wrapForTest(
+        DeliveryPanel(request: request, isAdmin: false, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -145,7 +147,8 @@ void main() {
     }
 
     await tester.pumpWidget(
-      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 0),
+      wrapForTest(
+        DeliveryPanel(request: request, isAdmin: false, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -156,6 +159,53 @@ void main() {
     await tester.pumpAndSettle();
     expect(calls, contains('delivery.ride'));
   });
+
+  testWidgets(
+    'assignment summary gives the next stop and human action labels',
+    (tester) async {
+      final assignmentData = {
+        ...assignment,
+        'ride_id': 3,
+        'stops': [
+          {...assignment['stops'][0], 'status': 'delivered'},
+          {
+            'id': 'stop-b',
+            'customer': 'Customer B',
+            'address_text': 'Street B',
+            'status': 'pending',
+            'reason': '',
+          },
+        ],
+      };
+      Future<dynamic> request(
+        String method, [
+        Map<String, dynamic> _ = const {},
+      ]) async {
+        if (method == 'session') return {};
+        return {
+          'assignments': [assignmentData],
+        };
+      }
+
+      await tester.pumpWidget(
+        wrapForTest(
+          DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Stops: 1 of 2 completed'), findsOneWidget);
+      expect(find.text('Next: Drive to Customer B.'), findsOneWidget);
+      expect(find.text('Mark arrived'), findsOneWidget);
+      expect(find.text('Confirm delivered'), findsOneWidget);
+      expect(find.text('Record partial delivery'), findsOneWidget);
+      expect(find.text('ERP sync: Pending'), findsOneWidget);
+      assignmentData['sync_pending'] = false;
+      assignmentData['last_error'] = 'ERP unavailable';
+      await tester.tap(find.byTooltip('Refresh deliveries'));
+      await tester.pumpAndSettle();
+      expect(find.text('ERP sync: Error — ERP unavailable'), findsOneWidget);
+    },
+  );
 
   testWidgets('ERP error is visible and refresh can recover', (tester) async {
     var fail = true;
@@ -169,7 +219,8 @@ void main() {
     }
 
     await tester.pumpWidget(
-      wrapForTest(DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
+      wrapForTest(
+        DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -199,13 +250,14 @@ void main() {
     }
 
     await tester.pumpWidget(
-      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+      wrapForTest(
+        DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('delivered'), findsOneWidget);
+    expect(find.text('Confirm delivered'), findsOneWidget);
     expect(calls, isNot(contains('delivery.confirm')));
-    await tester.tap(find.text('delivered'));
+    await tester.tap(find.text('Confirm delivered'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Confirm delivered?'), findsOneWidget);
@@ -259,7 +311,8 @@ void main() {
     }
 
     await tester.pumpWidget(
-      wrapForTest(DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
+      wrapForTest(
+        DeliveryPanel(request: request, isAdmin: true, activeRideId: 0),
       ),
     );
     await tester.pumpAndSettle();
@@ -288,11 +341,12 @@ void main() {
       }
 
       await tester.pumpWidget(
-        wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+        wrapForTest(
+          DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('delivered'));
+      await tester.tap(find.text('Confirm delivered'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -328,11 +382,12 @@ void main() {
     }
 
     await tester.pumpWidget(
-      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+      wrapForTest(
+        DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('delivered'));
+    await tester.tap(find.text('Confirm delivered'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.enterText(find.byType(TextFormField).at(0), '5');
@@ -354,11 +409,12 @@ void main() {
     }
 
     await tester.pumpWidget(
-      wrapForTest(DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
+      wrapForTest(
+        DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('delivered'));
+    await tester.tap(find.text('Confirm delivered'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     final fields = find.byType(TextFormField);
@@ -419,15 +475,12 @@ void main() {
       }
 
       await tester.pumpWidget(
-        wrapForTest(DeliveryPanel(
-            request: request,
-            isAdmin: false,
-            activeRideId: 3,
-          ),
+        wrapForTest(
+          DeliveryPanel(request: request, isAdmin: false, activeRideId: 3),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('delivered'));
+      await tester.tap(find.text('Confirm delivered'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(find.text('Confirm'));

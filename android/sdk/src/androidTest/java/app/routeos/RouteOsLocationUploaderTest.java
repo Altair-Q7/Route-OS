@@ -89,6 +89,11 @@ public class RouteOsLocationUploaderTest
     assertEquals(state, prefs.getString("tracking_state", ""));
   }
 
+  private JSONObject firstLocation(int request) throws Exception
+  {
+    return mRequests.get(request).getJSONArray("locations").getJSONObject(0);
+  }
+
   @After
   public void tearDown() throws Exception
   {
@@ -117,7 +122,7 @@ public class RouteOsLocationUploaderTest
     }
     awaitState("live");
     assertEquals(2, mRequests.size());
-    assertEquals(mRequests.get(0).getString("sample_id"), mRequests.get(1).getString("sample_id"));
+    assertEquals(firstLocation(0).getString("sample_id"), firstLocation(1).getString("sample_id"));
     assertEquals(0, mContext.getSharedPreferences("routeos", 0).getInt("tracking_pending", -1));
   }
 
@@ -129,7 +134,16 @@ public class RouteOsLocationUploaderTest
     assertEquals(1, mContext.getSharedPreferences("routeos", 0).getInt("tracking_pending", -1));
     awaitState("live");
     assertEquals(2, mRequests.size());
-    assertEquals(mRequests.get(0).getString("sample_id"), mRequests.get(1).getString("sample_id"));
+    assertEquals(firstLocation(0).getString("sample_id"), firstLocation(1).getString("sample_id"));
+  }
+
+  @Test
+  public void previousBackendFallsBackToTheSingleLocationEndpoint() throws Exception
+  {
+    start(404, 201);
+    awaitState("live");
+    assertEquals(2, mRequests.size());
+    assertEquals(firstLocation(0).getString("sample_id"), mRequests.get(1).getString("sample_id"));
   }
 
   @Test
@@ -158,6 +172,6 @@ public class RouteOsLocationUploaderTest
     mUploader.start();
     awaitState("live");
     assertEquals(2, mRequests.size());
-    assertEquals(mRequests.get(0).getString("sample_id"), mRequests.get(1).getString("sample_id"));
+    assertEquals(firstLocation(0).getString("sample_id"), firstLocation(1).getString("sample_id"));
   }
 }

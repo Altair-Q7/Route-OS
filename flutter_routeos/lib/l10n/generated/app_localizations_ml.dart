@@ -338,6 +338,9 @@ class AppStringsMl extends AppStrings {
   String get tripBuilderRemoveProduct => 'ഉൽപ്പന്നം നീക്കുക';
 
   @override
+  String get tripBuilderRemoveStop => 'സ്റ്റോപ്പ് നീക്കുക';
+
+  @override
   String get tripBuilderProduct => 'ഉൽപ്പന്നം';
 
   @override
@@ -460,6 +463,40 @@ class AppStringsMl extends AppStrings {
 
   @override
   String get adminActiveDrivers => 'സജീവ ഡ്രൈവർമാർ';
+
+  @override
+  String adminTrackingSummary(int active, int live) {
+    return '$active സജീവം · $live തത്സമയം';
+  }
+
+  @override
+  String get adminLive => 'തത്സമയം';
+
+  @override
+  String get adminDriverFallback => 'ഡ്രൈവർ';
+
+  @override
+  String get adminTimeNow => 'ഇപ്പോൾ';
+
+  @override
+  String adminSecondsAgo(int count) {
+    return '$count സെക്കൻഡ് മുമ്പ്';
+  }
+
+  @override
+  String adminMinutesAgo(int count) {
+    return '$count മിനിറ്റ് മുമ്പ്';
+  }
+
+  @override
+  String adminHoursAgo(int count) {
+    return '$count മണിക്കൂർ മുമ്പ്';
+  }
+
+  @override
+  String adminSpeedKmh(int speed) {
+    return '$speed കി.മീ/മണിക്കൂർ';
+  }
 
   @override
   String adminLiveRides(int count) {
@@ -601,6 +638,10 @@ class AppStringsMl extends AppStrings {
       'ഇതുവരെ സംരക്ഷിച്ച വഴികളില്ല. നിങ്ങളുടെ ആദ്യ വഴി ഒരുക്കുക അല്ലെങ്കിൽ റെക്കോർഡ് ചെയ്യുക.';
 
   @override
+  String get routesNoMatches =>
+      'നിങ്ങളുടെ തിരച്ചിലിനോ ഫിൽട്ടറിനോ യോജിച്ച വഴികളില്ല.';
+
+  @override
   String get routesSearch => 'സംരക്ഷിച്ച വഴികൾ തിരയുക';
 
   @override
@@ -626,6 +667,18 @@ class AppStringsMl extends AppStrings {
 
   @override
   String get routeDelete => 'വഴി ഇല്ലാതാക്കുക';
+
+  @override
+  String routeDeleteTitle(String name) {
+    return '“$name” ഇല്ലാതാക്കണോ?';
+  }
+
+  @override
+  String get routeDeleteHint =>
+      'ഇത് എല്ലാവർക്കുമായി RouteOS-ൽ നിന്ന് വഴി നീക്കും. പൂർത്തിയായ റൈഡുകളുടെ ചരിത്രം സൂക്ഷിക്കും.';
+
+  @override
+  String get routeRecordedTrack => 'റെക്കോർഡ് ചെയ്ത ട്രാക്ക്';
 
   @override
   String get routeRename => 'വഴിയുടെ പേര് മാറ്റുക';
@@ -781,6 +834,100 @@ class AppStringsMl extends AppStrings {
 
   @override
   String get actionRename => 'പേര് മാറ്റുക';
+
+  @override
+  String get actionAssign => 'നിയോഗിക്കുക';
+
+  @override
+  String get tripBuilderChooseDriver => 'ഒരു ഡ്രൈവറെ തിരഞ്ഞെടുക്കുക';
+
+  @override
+  String tripBuilderProductCount(int count) {
+    return '$count ഉൽപ്പന്നങ്ങൾ';
+  }
+
+  @override
+  String get tripBuilderEnterUnit => 'ഒരു യൂണിറ്റ് നൽകുക';
+
+  @override
+  String get deliveriesErpTrip => 'ERPNext ട്രിപ്പ്';
+
+  @override
+  String deliveriesSyncError(String error) {
+    return 'ERP സമന്വയ പിശക് — $error';
+  }
+
+  @override
+  String get deliveriesSyncPending => 'ERP സമന്വയം: കാത്തിരിക്കുന്നു';
+
+  @override
+  String get deliveriesSyncNotSynced => 'ERP സമന്വയം: ഇതുവരെ നടന്നിട്ടില്ല';
+
+  @override
+  String deliveriesSyncLast(String time) {
+    return 'ERP സമന്വയം: അവസാനം $time';
+  }
+
+  @override
+  String get stateUnknown => 'അജ്ഞാതം';
+
+  @override
+  String get deliveryActionArrived => 'എത്തിയതായി രേഖപ്പെടുത്തുക';
+
+  @override
+  String get deliveryActionDelivered => 'ഡെലിവറി ഉറപ്പാക്കുക';
+
+  @override
+  String get deliveryActionPartial => 'ഭാഗിക ഡെലിവറി രേഖപ്പെടുത്തുക';
+
+  @override
+  String get deliveryActionFailed => 'പരാജയപ്പെട്ട ഡെലിവറി രേഖപ്പെടുത്തുക';
+
+  @override
+  String get deliveryActionUpdate => 'സ്റ്റോപ്പ് പുതുക്കുക';
+
+  @override
+  String get deliveriesNextComplete =>
+      'അടുത്തത്: എല്ലാ സ്റ്റോപ്പുകളും പൂർത്തിയായി — വഴി അവസാനിപ്പിക്കാം.';
+
+  @override
+  String get deliveriesNextLinkRideAdmin =>
+      'അടുത്തത്: ഡ്രൈവർക്ക് സ്റ്റോപ്പുകൾ പുതുക്കാൻ ആദ്യം ഒരു റൈഡ് ബന്ധിപ്പിക്കുക.';
+
+  @override
+  String deliveriesNextLinkRideDriver(String vehicle) {
+    return 'അടുത്തത്: $vehicle വാഹനം ഉപയോഗിച്ച് സംരക്ഷിച്ച വഴി തുടങ്ങി ഇവിടെ ബന്ധിപ്പിക്കുക.';
+  }
+
+  @override
+  String deliveriesNextConfirm(String customer) {
+    return 'അടുത്തത്: $customer-ലെ ഡെലിവറി ഉറപ്പാക്കുക.';
+  }
+
+  @override
+  String deliveriesNextDrive(String customer) {
+    return 'അടുത്തത്: $customer-ലേക്ക് പോകുക.';
+  }
+
+  @override
+  String deliveriesStopsCompleted(int completed, int total) {
+    return 'സ്റ്റോപ്പുകൾ: $total ൽ $completed പൂർത്തിയായി';
+  }
+
+  @override
+  String deliveriesReason(String reason) {
+    return 'കാരണം: $reason';
+  }
+
+  @override
+  String deliveriesExtraRequest(
+    String shop,
+    String amount,
+    String unit,
+    String product,
+  ) {
+    return '$shop $amount $unit $product ആവശ്യപ്പെട്ടു';
+  }
 
   @override
   String get adminRefreshRides => 'സജീവ റൈഡുകൾ പുതുക്കുക';

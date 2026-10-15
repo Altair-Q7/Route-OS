@@ -4,6 +4,8 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import java.util.ArrayList;
+import java.util.List;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -46,9 +48,10 @@ public final class RouteOsLocationStore extends SQLiteOpenHelper
       values.put("ride_id", rideId);
       values.put("body", body.toString());
       db.insertOrThrow("samples", null, values);
-      // Prefer recent telemetry if an outage exceeds the bounded history window.
-      db.execSQL("DELETE FROM samples WHERE id NOT IN (SELECT id FROM samples ORDER BY id DESC LIMIT ?)",
-                 new Object[] {MAX_SAMPLES});
+      // Bound each account independently; one old account must not evict the current driver's telemetry.
+      db.execSQL("DELETE FROM samples WHERE server=? AND driver_id=? AND id NOT IN "
+                     + "(SELECT id FROM samples WHERE server=? AND driver_id=? ORDER BY id DESC LIMIT ?)",
+                 new Object[] {server, driverId, server, driverId, MAX_SAMPLES});
       db.setTransactionSuccessful();
     }
     finally
@@ -59,14 +62,25 @@ public final class RouteOsLocationStore extends SQLiteOpenHelper
 
   public Sample newest(String server, long driverId) throws JSONException
   {
+    List<Sample> samples = newestBatch(server, driverId, 1);
+    return samples.isEmpty() ? null : samples.get(0);
+  }
+
+  /** Returns newest-first samples for one ride so live tracking catches up before history. */
+  public List<Sample> newestBatch(String server, long driverId, int limit) throws JSONException
+  {
+    ArrayList<Sample> samples = new ArrayList<>();
     try (var cursor = getReadableDatabase().rawQuery(
-             "SELECT id, ride_id, body FROM samples WHERE server=? AND driver_id=? ORDER BY id DESC LIMIT 1",
-             new String[] {server, Long.toString(driverId)}))
+             "SELECT id, ride_id, body FROM samples WHERE server=? AND driver_id=? "
+                 + "AND ride_id=(SELECT ride_id FROM samples WHERE server=? AND driver_id=? ORDER BY id DESC LIMIT 1) "
+                 + "ORDER BY id DESC LIMIT ?",
+             new String[] {server, Long.toString(driverId), server, Long.toString(driverId),
+                           Integer.toString(Math.max(1, limit))}))
     {
-      if (!cursor.moveToFirst())
-        return null;
-      return new Sample(cursor.getLong(0), cursor.getLong(1), new JSONObject(cursor.getString(2)));
+      while (cursor.moveToNext())
+        samples.add(new Sample(cursor.getLong(0), cursor.getLong(1), new JSONObject(cursor.getString(2))));
     }
+    return samples;
   }
 
   public int count(String server, long driverId)
@@ -82,6 +96,22 @@ public final class RouteOsLocationStore extends SQLiteOpenHelper
   public void acknowledge(long sampleId)
   {
     getWritableDatabase().delete("samples", "id=?", new String[] {Long.toString(sampleId)});
+  }
+
+  public void acknowledge(List<Sample> samples)
+  {
+    SQLiteDatabase db = getWritableDatabase();
+    db.beginTransaction();
+    try
+    {
+      for (Sample sample : samples)
+        db.delete("samples", "id=?", new String[] {Long.toString(sample.id())});
+      db.setTransactionSuccessful();
+    }
+    finally
+    {
+      db.endTransaction();
+    }
   }
 
   public void discardRide(String server, long driverId, long rideId)

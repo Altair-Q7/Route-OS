@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,38 @@ import '../core/bridge.dart';
 import '../map/native_map.dart';
 import '../routing/planner.dart';
 import '../deliveries/delivery_panel.dart';
+
+const _routeFilterAll = 'all';
+const _routeFilterMine = 'mine';
+const _routeFilterFavourites = 'favourites';
+
+String _activeRidesSignature(List<Map<String, dynamic>> rides) {
+  const displayedFields = [
+    'id',
+    'driver_name',
+    'route_name',
+    'vehicle_number',
+    'latitude',
+    'longitude',
+    'speed_mps',
+    'bearing',
+    'location_recorded_at',
+    'location_stale',
+  ];
+  final rows =
+      rides
+          .map((ride) => [for (final field in displayedFields) ride[field]])
+          .toList()
+        ..sort(
+          (first, second) => '${first.first}'.compareTo('${second.first}'),
+        );
+  return jsonEncode(rows);
+}
+
+bool _sameActiveRides(
+  List<Map<String, dynamic>> previous,
+  List<Map<String, dynamic>> current,
+) => _activeRidesSignature(previous) == _activeRidesSignature(current);
 
 class RouteOsFlutterHome extends StatefulWidget {
   const RouteOsFlutterHome({super.key});
@@ -21,7 +54,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   List<Map<String, dynamic>> routes = [];
   List<Map<String, dynamic>> searchResults = [];
   bool searching = false;
-  String page = 'home', filter = '', query = '';
+  String page = 'home', filter = _routeFilterAll, query = '';
   String? error;
   Map<String, dynamic>? navigation;
   final navigationStatus = ValueNotifier<Map<String, dynamic>?>(null);
@@ -32,6 +65,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   Timer? adminTimer;
   bool adminLoading = false, foreground = true;
   List<Map<String, dynamic>> activeRides = [];
+  final activeRidesStatus = ValueNotifier<List<Map<String, dynamic>>>(const []);
   bool busy = false;
   bool rideStarting = false;
   bool authRequired = false;
@@ -49,9 +83,6 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     subscription = Bridge.events
         .receiveBroadcastStream({'version': 1})
         .listen(event, onError: (Object e) => message(e.toString()));
-    planner.addListener(() {
-      if (mounted) setState(() {});
-    });
     restore();
   }
 
@@ -91,7 +122,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               session.remove('active_ride_id');
             } else {
               session['active_ride_id'] = ride['id'];
-              navigation ??= {'maneuver': AppStrings.of(context).rideWaitingGps};
+              navigation ??= {
+                'maneuver': AppStrings.of(context).rideWaitingGps,
+              };
             }
           });
           notifyNavigation();
@@ -109,7 +142,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       if (e is PlatformException && e.code == 'AUTH_EXPIRED') {
         setState(() => authRequired = true);
       }
-      message('Could not restore your session: $e');
+      message(AppStrings.of(context).sessionRestoreFailed(e.toString()));
     }
   }
 
@@ -121,6 +154,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     adminTimer?.cancel();
     navigationStatus.dispose();
     recordingStatus.dispose();
+    activeRidesStatus.dispose();
     planner.dispose();
     super.dispose();
   }
@@ -221,8 +255,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           foreground &&
           account == session['id'] &&
           session['role'] == 'admin') {
-        setState(() => activeRides = rides);
-        await request('admin.points', {'rides': rides});
+        if (!_sameActiveRides(activeRides, rides)) {
+          activeRides = rides;
+          activeRidesStatus.value = List.unmodifiable(rides);
+          await request('admin.points', {'rides': rides});
+        }
       }
     } catch (_) {
     } finally {
@@ -372,9 +409,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     final generation = calculationGeneration;
     calculationWaiter = waiter;
     if (planner.points.length > 102) {
-      message(
-        AppStrings.of(context).drawOrganicsLimit,
-      );
+      message(AppStrings.of(context).drawOrganicsLimit);
       waiter?.complete(false);
       return;
     }
@@ -396,9 +431,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           if (!(calculationWaiter?.isCompleted ?? true)) {
             calculationWaiter!.complete(false);
           }
-          message(
-            AppStrings.of(context).routeTimeout,
-          );
+          message(AppStrings.of(context).routeTimeout);
         });
       }
     } catch (_) {
@@ -490,9 +523,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       setState(() => page = 'planner');
       if (!await calculateAndWait()) {
         if (!mounted) return;
-        message(
-          AppStrings.of(context).routeCalculateFailed,
-        );
+        message(AppStrings.of(context).routeCalculateFailed);
       }
     } catch (_) {
       if (!mounted) return;
@@ -513,7 +544,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           controller: input,
           autofocus: true,
           maxLength: 160,
-          decoration: InputDecoration(labelText: AppStrings.of(context).routeName),
+          decoration: InputDecoration(
+            labelText: AppStrings.of(context).routeName,
+          ),
         ),
         actions: [
           TextButton(
@@ -555,7 +588,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       false;
   Future<void> save() async {
     if (planner.state != PlannerState.ready) return;
-    final name = await nameDialog(AppStrings.of(context).drawSave, planner.name);
+    final name = await nameDialog(
+      AppStrings.of(context).drawSave,
+      planner.name,
+    );
     if (!mounted || name == null) return;
     setState(() => busy = true);
     planner.state = PlannerState.saving;
@@ -570,7 +606,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       planner.id = (route['id'] as num).toInt();
       planner.name = name;
       await refresh();
-      message('Route saved and available to other drivers.');
+      if (mounted) message(AppStrings.of(context).routeSaved);
     } catch (_) {
     } finally {
       if (mounted) {
@@ -613,7 +649,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               SizedBox(height: 16),
               TextField(
                 controller: number,
-                decoration: InputDecoration(labelText: 'Vehicle number'),
+                decoration: InputDecoration(
+                  labelText: AppStrings.of(context).tripBuilderVehicle,
+                ),
               ),
             ],
           ),
@@ -732,12 +770,20 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              title: Text('Point ${index + 1} · ${planner.typeAt(index)}'),
+              title: Text(
+                AppStrings.of(
+                  context,
+                ).pointLabel(index + 1, planner.typeAt(index)),
+              ),
               subtitle: Text(
                 '${p.label}\n${p.latitude.toStringAsFixed(5)}, ${p.longitude.toStringAsFixed(5)}',
               ),
             ),
-            for (final item in [AppStrings.of(context).pointMoveOnMap, AppStrings.of(context).pointInsertAfter, AppStrings.of(context).pointDelete])
+            for (final item in [
+              AppStrings.of(context).pointMoveOnMap,
+              AppStrings.of(context).pointInsertAfter,
+              AppStrings.of(context).pointDelete,
+            ])
               ListTile(
                 title: Text(item),
                 onTap: () => Navigator.pop(ctx, item),
@@ -752,8 +798,12 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
       await calculate();
       if (!mounted) return;
     }
-    if (action == AppStrings.of(context).pointMoveOnMap) setState(() => moving = index);
-    if (action == AppStrings.of(context).pointInsertAfter) setState(() => inserting = index);
+    if (action == AppStrings.of(context).pointMoveOnMap) {
+      setState(() => moving = index);
+    }
+    if (action == AppStrings.of(context).pointInsertAfter) {
+      setState(() => inserting = index);
+    }
   }
 
   Future<void> login([String? selected]) async {
@@ -772,13 +822,17 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           children: [
             TextField(
               controller: name,
-              decoration: InputDecoration(labelText: AppStrings.of(context).loginAccountName),
+              decoration: InputDecoration(
+                labelText: AppStrings.of(context).loginAccountName,
+              ),
             ),
             SizedBox(height: 12),
             TextField(
               controller: password,
               obscureText: true,
-              decoration: InputDecoration(labelText: AppStrings.of(context).loginPassword),
+              decoration: InputDecoration(
+                labelText: AppStrings.of(context).loginPassword,
+              ),
             ),
           ],
         ),
@@ -827,8 +881,11 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
   }
 
   Future<void> server() async {
-    final value = await nameDialog(session['development'] == true
-        ? AppStrings.of(context).loginServerTitle : AppStrings.of(context).loginServerTitleHttps);
+    final value = await nameDialog(
+      session['development'] == true
+          ? AppStrings.of(context).loginServerTitle
+          : AppStrings.of(context).loginServerTitleHttps,
+    );
     if (value != null) {
       try {
         await request('server', {'url': value});
@@ -842,6 +899,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
           page = 'home';
           authRequired = false;
         });
+        activeRidesStatus.value = const [];
         await restore();
         if (!mounted) return;
         message(AppStrings.of(context).loginServerConfigured);
@@ -902,7 +960,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                         '${p.latitude.toStringAsFixed(5)}, ${p.longitude.toStringAsFixed(5)}',
                       ),
                       trailing: PopupMenuButton<String>(
-                        tooltip: 'Edit point ${i + 1}',
+                        tooltip: '${AppStrings.of(context).pointEdit} ${i + 1}',
                         onSelected: (action) {
                           if (action == 'delete') {
                             planner.remove(i);
@@ -929,12 +987,16 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                           if (i > 0)
                             PopupMenuItem(
                               value: 'up',
-                              child: Text(AppStrings.of(context).pointMoveEarlier),
+                              child: Text(
+                                AppStrings.of(context).pointMoveEarlier,
+                              ),
                             ),
                           if (i < planner.points.length - 1)
                             PopupMenuItem(
                               value: 'down',
-                              child: Text(AppStrings.of(context).pointMoveLater),
+                              child: Text(
+                                AppStrings.of(context).pointMoveLater,
+                              ),
                             ),
                           PopupMenuItem(
                             value: 'move',
@@ -942,11 +1004,13 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                           ),
                           PopupMenuItem(
                             value: 'insert',
-                            child: Text(AppStrings.of(context).pointInsertAfter),
+                            child: Text(
+                              AppStrings.of(context).pointInsertAfter,
+                            ),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'delete',
-                            child: Text('Delete'),
+                            child: Text(AppStrings.of(context).actionDelete),
                           ),
                         ],
                       ),
@@ -1032,7 +1096,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             return;
                           }
                           if (navigation != null || busy || rideStarting) {
-                            message(AppStrings.of(context).rideEndNavigationFirst);
+                            message(
+                              AppStrings.of(context).rideEndNavigationFirst,
+                            );
                             return;
                           }
                           command('center', p);
@@ -1075,9 +1141,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 ListTile(
                   leading: Icon(Icons.play_arrow),
                   title: Text(AppStrings.of(context).rideStart),
-                  subtitle: Text(
-                    AppStrings.of(context).rideLoadPrompt,
-                  ),
+                  subtitle: Text(AppStrings.of(context).rideLoadPrompt),
                   onTap: () {
                     Navigator.pop(ctx);
                     startSavedRoute(route);
@@ -1091,14 +1155,12 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     Navigator.pop(ctx);
                     load(route);
                   },
-                )
-              else
+                ),
+              if (route['route_type'] == 'recorded')
                 ListTile(
                   leading: Icon(Icons.fiber_manual_record),
-                  title: Text('Recorded track'),
-                  subtitle: Text(
-                    AppStrings.of(context).recordSeparateNote,
-                  ),
+                  title: Text(AppStrings.of(context).routeRecordedTrack),
+                  subtitle: Text(AppStrings.of(context).recordSeparateNote),
                 ),
               ListTile(
                 leading: Icon(Icons.edit),
@@ -1141,7 +1203,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                   Navigator.pop(ctx);
                   try {
                     await request('share', {'id': route['id']});
-                    message('Route shared with RouteOS drivers.');
+                    if (mounted) {
+                      message(AppStrings.of(context).routeShared);
+                    }
                   } catch (_) {}
                 },
               ),
@@ -1162,8 +1226,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                 onTap: () async {
                   Navigator.pop(ctx);
                   if (await confirm(
-                    'Delete "${route['name']}"?',
-                    'This removes the route from RouteOS for everyone. Completed ride history is preserved.',
+                    AppStrings.of(
+                      context,
+                    ).routeDeleteTitle(route['name'].toString()),
+                    AppStrings.of(context).routeDeleteHint,
                   )) {
                     try {
                       await request('delete', {'id': route['id']});
@@ -1187,10 +1253,123 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
     return '${arrival.hour.toString().padLeft(2, '0')}:${arrival.minute.toString().padLeft(2, '0')}';
   }
 
+  Widget _plannerControls(bool landscape) => ListenableBuilder(
+    listenable: planner,
+    builder: (context, child) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                AppStrings.of(context).drawPoints(
+                  planner.points.length,
+                  planner.state.name.toUpperCase(),
+                ),
+              ),
+            ),
+            Text('${km(planner.distance)} · ${minutes(planner.duration)}'),
+          ],
+        ),
+        if (planner.points.length >= 4 && !landscape)
+          TextButton.icon(
+            onPressed: optimize,
+            icon: const Icon(Icons.swap_vert),
+            label: Text(AppStrings.of(context).drawOptimize),
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            if (landscape && planner.points.length >= 4)
+              IconButton(
+                tooltip: AppStrings.of(context).drawOptimize,
+                onPressed: rideStarting ? null : optimize,
+                icon: const Icon(Icons.swap_vert),
+              ),
+            IconButton(
+              tooltip: AppStrings.of(context).drawUndo,
+              onPressed: planner.canUndo && !rideStarting
+                  ? () {
+                      planner.undo();
+                      calculate();
+                    }
+                  : null,
+              icon: const Icon(Icons.undo),
+            ),
+            IconButton(
+              tooltip: AppStrings.of(context).drawRedo,
+              onPressed: planner.canRedo && !rideStarting
+                  ? () {
+                      planner.redo();
+                      calculate();
+                    }
+                  : null,
+              icon: const Icon(Icons.redo),
+            ),
+            IconButton(
+              tooltip: AppStrings.of(context).drawClear,
+              onPressed: rideStarting
+                  ? null
+                  : () {
+                      planner.clear();
+                      calculate();
+                    },
+              icon: const Icon(Icons.delete_sweep_outlined),
+            ),
+            IconButton(
+              tooltip: AppStrings.of(context).drawPointsList,
+              onPressed: rideStarting ? null : pointsSheet,
+              icon: const Icon(Icons.format_list_numbered),
+            ),
+            IconButton(
+              tooltip: AppStrings.of(context).drawUseMyLocation,
+              onPressed: rideStarting ? null : () => locate(add: true),
+              icon: const Icon(Icons.add_location_alt_outlined),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: planner.state == PlannerState.ready && !busy
+                    ? save
+                    : null,
+                child: Text(AppStrings.of(context).drawSave),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: FilledButton(
+                onPressed: planner.state == PlannerState.ready && !busy
+                    ? vehicle
+                    : null,
+                child: Text(AppStrings.of(context).drawStart),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final loggedIn = (session['id'] as num? ?? 0) > 0;
     final isAdmin = session['role'] == 'admin';
+    final visibleRoutes = routes
+        .where((route) {
+          final matchesQuery = route['name'].toString().toLowerCase().contains(
+            query.trim().toLowerCase(),
+          );
+          final matchesFilter = switch (filter) {
+            _routeFilterMine => route['recorder_id'] == session['id'],
+            _routeFilterFavourites => route['is_favorite'] == true,
+            _ => true,
+          };
+          return matchesQuery && matchesFilter;
+        })
+        .toList(growable: false);
     final landscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     return PopScope(
@@ -1258,7 +1437,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             child: DeliveryPanel(
                               request: request,
                               isAdmin: isAdmin,
-                              activeRideId: (session['active_ride_id'] as num? ?? 0).toInt(),
+                              activeRideId:
+                                  (session['active_ride_id'] as num? ?? 0)
+                                      .toInt(),
                             ),
                           ),
                         ),
@@ -1295,6 +1476,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                 activeRides = [];
                                 page = 'home';
                               });
+                              activeRidesStatus.value = const [];
                             } catch (_) {}
                           }
                         },
@@ -1310,9 +1492,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                     height: 24,
                     child: CircularProgressIndicator(),
                   ),
-                  title: Text(
-                    AppStrings.of(context).loginSigningIn,
-                  ),
+                  title: Text(AppStrings.of(context).loginSigningIn),
                 ),
               if (authRequired && !signingIn)
                 ListTile(
@@ -1381,56 +1561,13 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                         left: 12,
                         right: 12,
                         bottom: 12,
-                        child: Card(
-                          child: SizedBox(
-                            height: 220,
-                            child: Column(
-                              children: [
-                                ListTile(
-                                  title: Text(AppStrings.of(context).adminActiveDrivers),
-                                  subtitle: Text(
-                                    '${activeRides.length} live rides',
-                                  ),
-                                  trailing: IconButton(
-                                    tooltip: AppStrings.of(context).adminRefreshRides,
-                                    onPressed: pollAdmin,
-                                    icon: Icon(Icons.refresh),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: ListView(
-                                    children: [
-                                      if (activeRides.isEmpty)
-                                        ListTile(
-                                          title: Text(AppStrings.of(context).adminNoRides),
-                                          subtitle: Text(
-                                            AppStrings.of(context).adminNoRidesHint,
-                                          ),
-                                        ),
-                                      for (final ride in activeRides)
-                                        ListTile(
-                                          leading: Icon(
-                                            Icons.circle,
-                                            color: Color(0xff10df9b),
-                                            size: 12,
-                                          ),
-                                          title: Text(
-                                            '${ride['driver_name']} · ${ride['location_stale'] == true ? session['tracking_stale_label'] ?? '' : 'LIVE'}',
-                                          ),
-                                          subtitle: Text(
-                                            '${ride['route_name']}\n${ride['vehicle_number']} · GPS ${ride['location_recorded_at'] ?? AppStrings.of(context).rideLocationMissing}',
-                                          ),
-                                          isThreeLine: true,
-                                          onTap: ride['latitude'] == null
-                                              ? null
-                                              : () => command('center', ride),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        child: AdminLiveTrackingPanel(
+                          rides: activeRidesStatus,
+                          onRefresh: pollAdmin,
+                          onCenter: (ride) => command('center', ride),
+                          staleLabel:
+                              session['tracking_stale_label']?.toString() ??
+                              'STALE',
                         ),
                       ),
                     if (page == 'routes' && loggedIn)
@@ -1443,7 +1580,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                 padding: EdgeInsets.all(12),
                                 child: TextField(
                                   decoration: InputDecoration(
-                                    hintText: AppStrings.of(context).routesSearch,
+                                    hintText: AppStrings.of(
+                                      context,
+                                    ).routesSearch,
                                     prefixIcon: Icon(Icons.search),
                                   ),
                                   onChanged: (v) => setState(() => query = v),
@@ -1451,61 +1590,94 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                               ),
                               Wrap(
                                 spacing: 8,
-                                children: [AppStrings.of(context).routesFilterAll, AppStrings.of(context).routesTitle, AppStrings.of(context).routesFavourites]
-                                    .map(
-                                      (v) => ChoiceChip(
-                                        label: Text(v),
-                                        selected: filter == v,
-                                        onSelected: (_) =>
-                                            setState(() => filter = v),
-                                      ),
-                                    )
-                                    .toList(),
+                                children:
+                                    [
+                                          AppStrings.of(
+                                            context,
+                                          ).routesFilterAll,
+                                          AppStrings.of(context).routesTitle,
+                                          AppStrings.of(
+                                            context,
+                                          ).routesFavourites,
+                                        ]
+                                        .asMap()
+                                        .entries
+                                        .map(
+                                          (entry) => ChoiceChip(
+                                            label: Text(entry.value),
+                                            selected:
+                                                filter ==
+                                                const [
+                                                  _routeFilterAll,
+                                                  _routeFilterMine,
+                                                  _routeFilterFavourites,
+                                                ][entry.key],
+                                            onSelected: (_) => setState(
+                                              () => filter = const [
+                                                _routeFilterAll,
+                                                _routeFilterMine,
+                                                _routeFilterFavourites,
+                                              ][entry.key],
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
                               ),
                               Expanded(
                                 child: RefreshIndicator(
                                   onRefresh: refresh,
-                                  child: ListView(
-                                    children: [
-                                      for (final r in routes.where(
-                                        (r) =>
-                                            r['name']
-                                                .toString()
-                                                .toLowerCase()
-                                                .contains(
-                                                  query.toLowerCase(),
-                                                ) &&
-                                            (filter != AppStrings.of(context).routesTitle ||
-                                                r['recorder_id'] ==
-                                                    session['id']) &&
-                                            (filter != AppStrings.of(context).routesFavourites ||
-                                                r['is_favorite'] == true),
-                                      ))
-                                        Card(
-                                          child: ListTile(
-                                            leading: Icon(
-                                              Icons.route,
-                                              color: Color(0xff10df9b),
-                                            ),
-                                            title: Text(r['name'].toString()),
-                                            subtitle: Text(
-                                              '${km(r['distance_meters'])} · ${minutes(r['duration_seconds'])}\n${r['recorder_name']}',
-                                            ),
-                                            isThreeLine: true,
-                                            onTap: () => routeActions(r),
-                                            trailing: Icon(
-                                              Icons.chevron_right,
-                                            ),
-                                          ),
-                                        ),
-                                      if (routes.isEmpty)
-                                        Padding(
-                                          padding: EdgeInsets.all(24),
+                                  child: ListView.builder(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    padding: const EdgeInsets.fromLTRB(
+                                      8,
+                                      8,
+                                      8,
+                                      24,
+                                    ),
+                                    itemCount: visibleRoutes.isEmpty
+                                        ? 1
+                                        : visibleRoutes.length,
+                                    itemBuilder: (context, index) {
+                                      if (visibleRoutes.isEmpty) {
+                                        return Padding(
+                                          padding: const EdgeInsets.all(24),
                                           child: Text(
-                                            AppStrings.of(context).routesEmpty,
+                                            routes.isEmpty &&
+                                                    query.trim().isEmpty &&
+                                                    filter == _routeFilterAll
+                                                ? AppStrings.of(
+                                                    context,
+                                                  ).routesEmpty
+                                                : AppStrings.of(
+                                                    context,
+                                                  ).routesNoMatches,
+                                            textAlign: TextAlign.center,
                                           ),
+                                        );
+                                      }
+                                      final route = visibleRoutes[index];
+                                      return Card(
+                                        child: ListTile(
+                                          leading: CircleAvatar(
+                                            child: Icon(
+                                              route['route_type'] == 'recorded'
+                                                  ? Icons.timeline
+                                                  : Icons.alt_route,
+                                            ),
+                                          ),
+                                          title: Text(route['name'].toString()),
+                                          subtitle: Text(
+                                            '${km(route['distance_meters'])} · ${minutes(route['duration_seconds'])}\n${route['recorder_name']}',
+                                          ),
+                                          isThreeLine: true,
+                                          onTap: () => routeActions(route),
+                                          trailing: route['is_favorite'] == true
+                                              ? const Icon(Icons.star)
+                                              : const Icon(Icons.chevron_right),
                                         ),
-                                    ],
+                                      );
+                                    },
                                   ),
                                 ),
                               ),
@@ -1531,7 +1703,7 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                           child: ListTile(
                             title: Text(
                               moving != null
-                                  ? 'Tap the new position for point ${moving! + 1}'
+                                  ? '${AppStrings.of(context).pointMoveTap} ${moving! + 1}'
                                   : AppStrings.of(context).pointInsertTap,
                             ),
                             trailing: IconButton(
@@ -1557,7 +1729,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                         ValueListenableBuilder<Map<String, dynamic>>(
                           valueListenable: recordingStatus,
                           builder: (context, stats, child) => Text(
-                            'Recording Route · ${km(stats['distance_meters'])} · ${minutes(stats['duration_seconds'])}',
+                            AppStrings.of(context).recordProgress(
+                              '${km(stats['distance_meters'])} · ${minutes(stats['duration_seconds'])}',
+                            ),
                           ),
                         ),
                         Row(
@@ -1572,14 +1746,18 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                     await command('record.cancel');
                                   }
                                 },
-                                child: Text(AppStrings.of(context).recordDiscard),
+                                child: Text(
+                                  AppStrings.of(context).recordDiscard,
+                                ),
                               ),
                             ),
                             SizedBox(width: 12),
                             Expanded(
                               child: FilledButton(
                                 onPressed: () => command('record.stop'),
-                                child: Text(AppStrings.of(context).recordStopSave),
+                                child: Text(
+                                  AppStrings.of(context).recordStopSave,
+                                ),
                               ),
                             ),
                           ],
@@ -1590,102 +1768,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                           area: NavigationStatusArea.statistics,
                           onEndRide: endRide,
                         )
-                      else if (page == 'planner') ...[
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '${planner.points.length} points · ${planner.state.name.toUpperCase()}',
-                              ),
-                            ),
-                            Text(
-                              '${km(planner.distance)} · ${minutes(planner.duration)}',
-                            ),
-                          ],
-                        ),
-                        if (planner.points.length >= 4 && !landscape)
-                          TextButton.icon(
-                            onPressed: optimize,
-                            icon: Icon(Icons.swap_vert),
-                            label: Text(AppStrings.of(context).drawOptimize),
-                          ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            if (landscape && planner.points.length >= 4)
-                              IconButton(
-                                tooltip: AppStrings.of(context).drawOptimize,
-                                onPressed: rideStarting ? null : optimize,
-                                icon: Icon(Icons.swap_vert),
-                              ),
-                            IconButton(
-                              tooltip: AppStrings.of(context).drawUndo,
-                              onPressed: planner.canUndo && !rideStarting
-                                  ? () {
-                                      planner.undo();
-                                      calculate();
-                                    }
-                                  : null,
-                              icon: Icon(Icons.undo),
-                            ),
-                            IconButton(
-                              tooltip: AppStrings.of(context).drawRedo,
-                              onPressed: planner.canRedo && !rideStarting
-                                  ? () {
-                                      planner.redo();
-                                      calculate();
-                                    }
-                                  : null,
-                              icon: Icon(Icons.redo),
-                            ),
-                            IconButton(
-                              tooltip: AppStrings.of(context).drawClear,
-                              onPressed: rideStarting
-                                  ? null
-                                  : () {
-                                      planner.clear();
-                                      calculate();
-                                    },
-                              icon: Icon(Icons.delete_sweep_outlined),
-                            ),
-                            IconButton(
-                              tooltip: AppStrings.of(context).drawPointsList,
-                              onPressed: rideStarting ? null : pointsSheet,
-                              icon: Icon(Icons.format_list_numbered),
-                            ),
-                            IconButton(
-                              tooltip: AppStrings.of(context).drawUseMyLocation,
-                              onPressed: rideStarting
-                                  ? null
-                                  : () => locate(add: true),
-                              icon: Icon(Icons.add_location_alt_outlined),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed:
-                                    planner.state == PlannerState.ready && !busy
-                                    ? save
-                                    : null,
-                                child: Text(AppStrings.of(context).drawSave),
-                              ),
-                            ),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: FilledButton(
-                                onPressed:
-                                    planner.state == PlannerState.ready && !busy
-                                    ? vehicle
-                                    : null,
-                                child: Text(AppStrings.of(context).drawStart),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ] else if (page == 'home' &&
+                      else if (page == 'planner')
+                        _plannerControls(landscape)
+                      else if (page == 'home' &&
                           session['role'] != 'admin') ...[
                         Row(
                           children: [
@@ -1704,7 +1789,9 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                                   if (planner.points.isNotEmpty) calculate();
                                 },
                                 icon: Icon(Icons.edit_location_alt),
-                                label: Text(AppStrings.of(context).drawEditRoute),
+                                label: Text(
+                                  AppStrings.of(context).drawEditRoute,
+                                ),
                               ),
                             ),
                           ],
@@ -1720,8 +1807,13 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
                             onTap: () => routeActions(routes.first),
                           ),
                       ],
-                      if (busy || planner.state == PlannerState.calculating)
-                        const LinearProgressIndicator(),
+                      ListenableBuilder(
+                        listenable: planner,
+                        builder: (context, child) =>
+                            busy || planner.state == PlannerState.calculating
+                            ? const LinearProgressIndicator()
+                            : const SizedBox.shrink(),
+                      ),
                     ],
                   ),
                 ),
@@ -1775,7 +1867,10 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
               SizedBox(height: 12),
               Text(AppStrings.of(context).loginTagline),
               SizedBox(height: 24),
-              FilledButton(onPressed: login, child: Text(AppStrings.of(context).actionSignIn)),
+              FilledButton(
+                onPressed: login,
+                child: Text(AppStrings.of(context).actionSignIn),
+              ),
               TextButton(
                 onPressed: server,
                 child: Text(AppStrings.of(context).loginConfigureServer),
@@ -1816,6 +1911,167 @@ class _HomeState extends State<RouteOsFlutterHome> with WidgetsBindingObserver {
             ],
           ),
         ),
+      ),
+    ),
+  );
+}
+
+class AdminLiveTrackingPanel extends StatelessWidget {
+  const AdminLiveTrackingPanel({
+    required this.rides,
+    required this.onRefresh,
+    required this.onCenter,
+    required this.staleLabel,
+    super.key,
+  });
+
+  final ValueListenable<List<Map<String, dynamic>>> rides;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<Map<String, dynamic>> onCenter;
+  final String staleLabel;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder(
+    valueListenable: rides,
+    builder: (context, active, child) {
+      final strings = AppStrings.of(context);
+      final live = active
+          .where((ride) => ride['location_stale'] != true)
+          .length;
+      return Card(
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          height: 250,
+          child: Column(
+            children: [
+              ListTile(
+                leading: const CircleAvatar(
+                  child: Icon(Icons.local_shipping_outlined),
+                ),
+                title: Text(strings.adminActiveDrivers),
+                subtitle: Text(
+                  strings.adminTrackingSummary(active.length, live),
+                ),
+                trailing: IconButton(
+                  tooltip: strings.adminRefreshRides,
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: active.isEmpty
+                    ? Center(
+                        child: ListTile(
+                          leading: const Icon(Icons.route_outlined),
+                          title: Text(strings.adminNoRides),
+                          subtitle: Text(strings.adminNoRidesHint),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: EdgeInsets.zero,
+                        itemCount: active.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final ride = active[index];
+                          final stale = ride['location_stale'] == true;
+                          final hasLocation = ride['latitude'] != null;
+                          final speed = (ride['speed_mps'] as num?)?.toDouble();
+                          final driver =
+                              ride['driver_name']?.toString().trim() ?? '';
+                          return ListTile(
+                            enabled: hasLocation,
+                            leading: CircleAvatar(
+                              backgroundColor: stale
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.primaryContainer,
+                              child: Text(
+                                driver.isEmpty ? '?' : driver[0].toUpperCase(),
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    driver.isEmpty
+                                        ? strings.adminDriverFallback
+                                        : driver,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                _TrackingBadge(
+                                  label: stale ? staleLabel : strings.adminLive,
+                                  live: !stale,
+                                ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              [
+                                ride['route_name']?.toString() ?? '',
+                                ride['vehicle_number']?.toString() ?? '',
+                                if (speed != null)
+                                  strings.adminSpeedKmh((speed * 3.6).round()),
+                                _relativeTime(
+                                  ride['location_recorded_at'],
+                                  strings,
+                                ),
+                              ].where((value) => value.isNotEmpty).join(' · '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: hasLocation
+                                ? const Icon(Icons.my_location, size: 20)
+                                : const Icon(Icons.location_off_outlined),
+                            onTap: hasLocation ? () => onCenter(ride) : null,
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+
+  static String _relativeTime(dynamic value, AppStrings strings) {
+    final stamp = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+    if (stamp == null) return strings.rideLocationMissing;
+    final seconds = DateTime.now().difference(stamp).inSeconds;
+    if (seconds < 10) return strings.adminTimeNow;
+    if (seconds < 60) return strings.adminSecondsAgo(seconds);
+    final minutes = seconds ~/ 60;
+    if (minutes < 60) return strings.adminMinutesAgo(minutes);
+    return strings.adminHoursAgo(minutes ~/ 60);
+  }
+}
+
+class _TrackingBadge extends StatelessWidget {
+  const _TrackingBadge({required this.label, required this.live});
+
+  final String label;
+  final bool live;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: live
+          ? const Color(0x3322e39f)
+          : Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(99),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: live ? const Color(0xff42e6ad) : null,
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
       ),
     ),
   );
@@ -1886,7 +2142,10 @@ class NavigationStatusOverlay extends StatelessWidget {
               ],
             ),
           ),
-          FilledButton(onPressed: onEndRide, child: Text(AppStrings.of(context).rideEnd)),
+          FilledButton(
+            onPressed: onEndRide,
+            child: Text(AppStrings.of(context).rideEnd),
+          ),
         ],
       );
     },

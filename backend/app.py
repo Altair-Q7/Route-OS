@@ -15,8 +15,9 @@ from contextlib import asynccontextmanager, closing
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 from erpnext_integration import DeliveryIntegration, initialize as initialize_deliveries
 
@@ -27,6 +28,8 @@ DATABASE_PATH = Path(os.getenv("ROUTEOS_DATABASE", ROOT / "routeos.db"))
 # account out, and one attacker must not be able to guess it indefinitely.
 LOGIN_MAX_ATTEMPTS = int(os.getenv("ROUTEOS_LOGIN_MAX_ATTEMPTS", "5"))
 LOGIN_WINDOW_SECONDS = 900.0
+ROUTEOS_VERSION = "2.4.0-alpha"
+LOCATION_HISTORY_RETENTION_DAYS = max(1, int(os.getenv("ROUTEOS_LOCATION_RETENTION_DAYS", "30")))
 
 
 def development_auth() -> bool:
@@ -113,13 +116,23 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 ARRIVAL_RADIUS_M = 150.0
+ROUTE_PREVIEW_MAX_POINTS = 2_000
+LOCATION_BATCH_MAX_SAMPLES = 20
+
+
+def sampled_route_points(points: list[dict], maximum: int) -> list[dict]:
+    """Return an evenly sampled route while preserving both endpoints."""
+    if len(points) <= maximum:
+        return points
+    last = len(points) - 1
+    indices = [round(index * last / (maximum - 1)) for index in range(maximum)]
+    return [points[index] for index in indices]
 
 
 def connection() -> sqlite3.Connection:
     db = sqlite3.connect(DATABASE_PATH, timeout=10.0, check_same_thread=False)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
-    db.execute("PRAGMA journal_mode = WAL")
     db.execute("PRAGMA busy_timeout = 10000")
     db.execute("PRAGMA synchronous = NORMAL")
     db.execute("PRAGMA cache_size = -8192")
@@ -129,6 +142,9 @@ def connection() -> sqlite3.Connection:
 
 def initialize_database() -> None:
     with closing(connection()) as db:
+        # WAL is persistent database configuration; changing it on every request
+        # needlessly takes a schema lock under concurrent location uploads.
+        db.execute("PRAGMA journal_mode = WAL")
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS events (
@@ -276,6 +292,30 @@ def initialize_database() -> None:
                 db.execute(f"ALTER TABLE live_locations ADD COLUMN {column} {kind}")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_location_sample ON live_locations(ride_id, sample_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_location_time ON live_locations(ride_id, recorded_at DESC, id DESC)")
+        track_columns = {row["name"] for row in db.execute("PRAGMA table_info(recorded_tracks)")}
+        if "preview_points" not in track_columns:
+            db.execute("ALTER TABLE recorded_tracks ADD COLUMN preview_points TEXT")
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS latest_locations (
+              ride_id INTEGER PRIMARY KEY,
+              location_id INTEGER NOT NULL,
+              driver_id INTEGER NOT NULL,
+              latitude REAL NOT NULL,
+              longitude REAL NOT NULL,
+              speed_mps REAL,
+              bearing REAL,
+              recorded_at TEXT NOT NULL,
+              sample_id TEXT,
+              accuracy_meters REAL,
+              received_at TEXT,
+              FOREIGN KEY (ride_id) REFERENCES rides(id) ON DELETE CASCADE,
+              FOREIGN KEY (location_id) REFERENCES live_locations(id) ON DELETE CASCADE,
+              FOREIGN KEY (driver_id) REFERENCES users(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_latest_locations_driver ON latest_locations(driver_id);
+            """
+        )
         db.execute(
             """
             UPDATE routes
@@ -287,6 +327,52 @@ def initialize_database() -> None:
         db.execute(
             "DELETE FROM live_locations WHERE ride_id NOT IN (SELECT id FROM rides)"
             " OR driver_id NOT IN (SELECT id FROM users)"
+        )
+        db.execute("DELETE FROM latest_locations WHERE ride_id NOT IN (SELECT id FROM rides)")
+        retention_cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=LOCATION_HISTORY_RETENTION_DAYS)
+        ).isoformat()
+        db.execute(
+            """DELETE FROM latest_locations
+                 WHERE ride_id IN (SELECT id FROM rides WHERE status != 'active')
+                   AND recorded_at < ?""",
+            (retention_cutoff,),
+        )
+        db.execute(
+            """DELETE FROM live_locations
+                 WHERE ride_id IN (SELECT id FROM rides WHERE status != 'active')
+                   AND recorded_at < ?""",
+            (retention_cutoff,),
+        )
+        db.execute(
+            """
+            INSERT INTO latest_locations(
+              ride_id, location_id, driver_id, latitude, longitude, speed_mps, bearing,
+              recorded_at, sample_id, accuracy_meters, received_at
+            )
+            SELECT l.ride_id, l.id, l.driver_id, l.latitude, l.longitude, l.speed_mps, l.bearing,
+                   l.recorded_at, l.sample_id, l.accuracy_meters, l.received_at
+              FROM rides r
+              JOIN live_locations l ON l.id = (
+                SELECT newer.id FROM live_locations newer
+                 WHERE newer.ride_id = r.id
+                 ORDER BY newer.recorded_at DESC, newer.id DESC LIMIT 1
+              )
+            ON CONFLICT(ride_id) DO UPDATE SET
+              location_id=excluded.location_id,
+              driver_id=excluded.driver_id,
+              latitude=excluded.latitude,
+              longitude=excluded.longitude,
+              speed_mps=excluded.speed_mps,
+              bearing=excluded.bearing,
+              recorded_at=excluded.recorded_at,
+              sample_id=excluded.sample_id,
+              accuracy_meters=excluded.accuracy_meters,
+              received_at=excluded.received_at
+            WHERE excluded.recorded_at > latest_locations.recorded_at
+               OR (excluded.recorded_at = latest_locations.recorded_at
+                   AND excluded.location_id > latest_locations.location_id)
+            """
         )
         db.execute(
             "DELETE FROM rides WHERE driver_id NOT IN (SELECT id FROM users)"
@@ -530,6 +616,18 @@ class LiveLocationIn(BaseModel):
         return value
 
 
+class LiveLocationBatchIn(BaseModel):
+    """A bounded group of durable GPS updates from one driver."""
+    driver_id: int
+    locations: list[LiveLocationIn] = Field(min_length=1, max_length=LOCATION_BATCH_MAX_SAMPLES)
+
+    @model_validator(mode="after")
+    def one_driver(self) -> LiveLocationBatchIn:
+        if any(location.driver_id != self.driver_id for location in self.locations):
+            raise ValueError("all locations must belong to the batch driver")
+        return self
+
+
 class RouteActorIn(BaseModel):
     """Base model for route actions requiring a driver"""
     driver_id: int
@@ -641,7 +739,8 @@ async def lifespan(app: FastAPI):
             pass
 
 
-app = FastAPI(title="RouteOS Backend", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="RouteOS Backend", version=ROUTEOS_VERSION, lifespan=lifespan)
+app.add_middleware(GZipMiddleware, minimum_size=1_000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[v.strip() for v in os.getenv("ROUTEOS_CORS_ORIGINS", "").split(",") if v.strip()],
@@ -661,7 +760,12 @@ def health() -> dict:
             db.execute("SELECT 1").fetchone()
     except sqlite3.Error as error:
         raise HTTPException(status_code=503, detail="database unavailable") from error
-    return {"status": "ok", "service": "routeos-backend", "organic_maps": True}
+    return {
+        "status": "ok",
+        "service": "routeos-backend",
+        "version": ROUTEOS_VERSION,
+        "organic_maps": True,
+    }
 
 
 @app.post("/api/v1/users", status_code=201)
@@ -808,8 +912,11 @@ def create_track(track: TrackIn, me: dict = Depends(current_user)) -> dict:
         if db.execute("SELECT 1 FROM users WHERE id = ?", (track.recorder_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail="recorder not found")
         cursor = db.execute(
-            "INSERT INTO recorded_tracks(recorder_id, organic_maps_track_id, points, created_at) VALUES (?, ?, ?, ?)",
-            (track.recorder_id, track.organic_maps_track_id, json.dumps(points), created_at),
+            """INSERT INTO recorded_tracks(
+                   recorder_id, organic_maps_track_id, points, preview_points, created_at
+               ) VALUES (?, ?, ?, ?, ?)""",
+            (track.recorder_id, track.organic_maps_track_id, json.dumps(points),
+             json.dumps(sampled_route_points(points, ROUTE_PREVIEW_MAX_POINTS)), created_at),
         )
         db.commit()
     return {
@@ -892,7 +999,12 @@ def route_stats(points: list[dict]) -> tuple[float, int]:
 
 
 @app.get("/api/v1/routes")
-def list_routes(driver_id: int | None = None, me: dict = Depends(current_user)) -> list[dict]:
+def list_routes(
+    driver_id: int | None = None,
+    limit: int = Query(default=500, ge=1, le=1_000),
+    offset: int = Query(default=0, ge=0),
+    me: dict = Depends(current_user),
+) -> list[dict]:
     """List all saved routes (not soft-deleted).
     Returns routes with:
     - Basic info (name, type, distance, duration)
@@ -917,8 +1029,9 @@ def list_routes(driver_id: int | None = None, me: dict = Depends(current_user)) 
               LEFT JOIN route_recents rec ON rec.route_id=r.id AND rec.user_id=?
               WHERE r.deleted_at IS NULL
               ORDER BY COALESCE(rec.last_used_at,r.created_at) DESC, r.id DESC
+              LIMIT ? OFFSET ?
               """
-             , (viewer_id, viewer_id)
+             , (viewer_id, viewer_id, limit, offset)
         ).fetchall()
         result = []
         for row in rows:
@@ -956,7 +1069,11 @@ def save_planned_route(route: PlannedRouteIn, me: dict = Depends(current_user)) 
 
 
 @app.get("/api/v1/routes/{route_id}")
-def get_route(route_id: int, me: dict = Depends(current_user)) -> dict:
+def get_route(
+    route_id: int,
+    max_points: int | None = Query(default=None, ge=2, le=ROUTE_PREVIEW_MAX_POINTS),
+    me: dict = Depends(current_user),
+) -> dict:
     """Get full route details including geometry.
     For 'drawn' routes: Returns waypoints (planned points) with saved distance/duration.
     For 'recorded' routes: Returns full GPS track points with computed distance/duration.
@@ -967,25 +1084,59 @@ def get_route(route_id: int, me: dict = Depends(current_user)) -> dict:
             SELECT r.id, r.name, r.recorder_id, r.track_id, r.origin, r.destination, r.route_type, r.created_at,
                    r.hub_latitude, r.hub_longitude, u.name AS recorder_name,
                    r.start_latitude, r.start_longitude, r.destination_latitude, r.destination_longitude,
-                   t.organic_maps_track_id, t.points, r.waypoints, r.distance_meters AS saved_distance, r.duration_seconds AS saved_duration
+                   r.point_count,
+                   t.organic_maps_track_id,
+                   CASE WHEN ? IS NOT NULL AND r.route_type = 'recorded' AND t.preview_points IS NOT NULL
+                                  AND r.distance_meters IS NOT NULL AND r.duration_seconds IS NOT NULL
+                        THEN t.preview_points ELSE t.points END AS points,
+                   t.preview_points IS NOT NULL AS has_preview,
+                   r.waypoints, r.distance_meters AS saved_distance,
+                   r.duration_seconds AS saved_duration
             FROM routes r LEFT JOIN recorded_tracks t ON t.id = r.track_id
             JOIN users u ON u.id = r.recorder_id
             WHERE r.id = ? AND r.deleted_at IS NULL
             """,
-            (route_id,),
+            (max_points, route_id),
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="route not found")
     route = dict(row)
     raw_points = route.pop("points")
     route["points"] = json.loads(raw_points) if raw_points else []
-    route["point_count"] = len(route["points"])
-    route["distance_meters"], route["duration_seconds"] = route_stats(route["points"])
+    has_preview = bool(route.pop("has_preview"))
+    # Route creation and database initialization persist these aggregates. Do
+    # not recalculate Haversine distance for every detail request: recorded
+    # tracks can contain 100,000 points and are commonly opened repeatedly by
+    # the mobile client. Keep a fallback for legacy rows before reducing the
+    # response geometry so that its totals remain exact.
+    route["point_count"] = route.get("point_count") or len(route["points"])
+    saved_distance = route.pop("saved_distance")
+    saved_duration = route.pop("saved_duration")
+    if saved_distance is not None and saved_duration is not None:
+        route["distance_meters"] = saved_distance
+        route["duration_seconds"] = saved_duration
+    else:
+        route["distance_meters"], route["duration_seconds"] = route_stats(route["points"])
+    if route["route_type"] == "recorded" and max_points is not None:
+        if not has_preview:
+            preview = sampled_route_points(route["points"], ROUTE_PREVIEW_MAX_POINTS)
+            with closing(connection()) as db:
+                db.execute(
+                    "UPDATE recorded_tracks SET preview_points=? WHERE id=? AND preview_points IS NULL",
+                    (json.dumps(preview), route["track_id"]),
+                )
+                db.commit()
+            route["points"] = preview
+        route["points"] = sampled_route_points(route["points"], max_points)
     definition = route.pop("waypoints")
     if definition:
         route["points"] = json.loads(definition)
-        route["distance_meters"] = route.pop("saved_distance")
-        route["duration_seconds"] = route.pop("saved_duration")
+        # Planned routes already carry their calculated values. The condition
+        # above normally consumed them; retain the fallback for old planned
+        # rows whose aggregate columns were not populated.
+        if route.get("distance_meters") is None or route.get("duration_seconds") is None:
+            route["distance_meters"] = saved_distance
+            route["duration_seconds"] = saved_duration
     return route
 
 
@@ -1161,51 +1312,59 @@ def start_ride(ride: RideIn, me: dict = Depends(current_user)) -> dict:
     return {"id": cursor.lastrowid, **ride.model_dump(), "status": "active", "started_at": started_at}
 
 
-@app.post("/api/v1/rides/{ride_id}/locations", status_code=201)
-def update_live_location(ride_id: int, location: LiveLocationIn, me: dict = Depends(current_user)) -> dict:
-    """Upload a live GPS location during an active ride.
-    Called by driver app every ~5 seconds while ride is active.
-    Uses INSERT OR IGNORE with sample_id for deduplication (handles retries).
-    Returns computed distances and arrival status for UI feedback.
-    Returns:
-    - Stored location data
-    - distance_to_hub_m: Distance to route's central hub point
-    - distance_to_destination_m: Distance to final destination
-    - arrived: True if within 150m of destination AND GPS < 2 min old
-    """
-    caller_owns(me, location.driver_id)
-    received_at = utc_now()
+def _store_live_location(
+    db: sqlite3.Connection, ride_id: int, location: LiveLocationIn, received_at: str
+) -> sqlite3.Row:
     recorded_at = location.recorded_at.isoformat() if location.recorded_at else received_at
-    with closing(connection()) as db:
-        ride = db.execute("SELECT driver_id, route_id, status FROM rides WHERE id = ?", (ride_id,)).fetchone()
-        if ride is None:
-            raise HTTPException(status_code=404, detail="ride not found")
-        if ride["driver_id"] != location.driver_id:
-            raise HTTPException(status_code=403, detail="location belongs to another driver")
-        if ride["status"] != "active":
-            raise HTTPException(status_code=409, detail="ride has ended")
-        cursor = db.execute(
-            """
-            INSERT OR IGNORE INTO live_locations(ride_id, driver_id, latitude, longitude, speed_mps, bearing,
-                recorded_at, sample_id, accuracy_meters, received_at)
-            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            WHERE EXISTS (SELECT 1 FROM rides WHERE id = ? AND status = 'active')
-            """,
-            (ride_id, location.driver_id, location.latitude, location.longitude,
-              location.speed_mps, location.bearing, recorded_at, location.sample_id, location.accuracy_meters,
-              received_at, ride_id),
-        )
-        stored = db.execute("SELECT * FROM live_locations WHERE id=?", (cursor.lastrowid,)).fetchone() if cursor.rowcount else None
-        if stored is None and location.sample_id:
-            stored = db.execute(
-                "SELECT * FROM live_locations WHERE ride_id=? AND sample_id=?", (ride_id, location.sample_id)
-            ).fetchone()
-        if stored is None:
-            raise HTTPException(status_code=409, detail="ride has ended")
-        route = db.execute(
-            "SELECT hub_latitude, hub_longitude, destination_latitude, destination_longitude FROM routes WHERE id = ?", (ride["route_id"],)
+    cursor = db.execute(
+        """
+        INSERT OR IGNORE INTO live_locations(ride_id, driver_id, latitude, longitude, speed_mps, bearing,
+            recorded_at, sample_id, accuracy_meters, received_at)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (SELECT 1 FROM rides WHERE id = ? AND status = 'active')
+        """,
+        (ride_id, location.driver_id, location.latitude, location.longitude,
+         location.speed_mps, location.bearing, recorded_at, location.sample_id, location.accuracy_meters,
+         received_at, ride_id),
+    )
+    stored = db.execute(
+        "SELECT * FROM live_locations WHERE id=?", (cursor.lastrowid,)
+    ).fetchone() if cursor.rowcount else None
+    if stored is None and location.sample_id:
+        stored = db.execute(
+            "SELECT * FROM live_locations WHERE ride_id=? AND sample_id=?", (ride_id, location.sample_id)
         ).fetchone()
-        db.commit()
+    if stored is None:
+        raise HTTPException(status_code=409, detail="ride has ended")
+    db.execute(
+        """
+        INSERT INTO latest_locations(
+          ride_id, location_id, driver_id, latitude, longitude, speed_mps, bearing,
+          recorded_at, sample_id, accuracy_meters, received_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(ride_id) DO UPDATE SET
+          location_id=excluded.location_id,
+          driver_id=excluded.driver_id,
+          latitude=excluded.latitude,
+          longitude=excluded.longitude,
+          speed_mps=excluded.speed_mps,
+          bearing=excluded.bearing,
+          recorded_at=excluded.recorded_at,
+          sample_id=excluded.sample_id,
+          accuracy_meters=excluded.accuracy_meters,
+          received_at=excluded.received_at
+        WHERE excluded.recorded_at > latest_locations.recorded_at
+           OR (excluded.recorded_at = latest_locations.recorded_at
+               AND excluded.location_id > latest_locations.location_id)
+        """,
+        (ride_id, stored["id"], stored["driver_id"], stored["latitude"], stored["longitude"],
+         stored["speed_mps"], stored["bearing"], stored["recorded_at"], stored["sample_id"],
+         stored["accuracy_meters"], stored["received_at"]),
+    )
+    return stored
+
+
+def _location_response(stored: sqlite3.Row, route: sqlite3.Row | None) -> dict:
     distance_to_hub_m: float | None = None
     arrived = False
     distance_to_destination_m: float | None = None
@@ -1225,6 +1384,56 @@ def update_live_location(ride_id: int, location: LiveLocationIn, me: dict = Depe
         "distance_to_destination_m": distance_to_destination_m,
         "arrived": arrived,
     }
+
+
+def _ride_and_route_for_location(
+    db: sqlite3.Connection, ride_id: int, driver_id: int
+) -> tuple[sqlite3.Row, sqlite3.Row | None]:
+    ride = db.execute("SELECT driver_id, route_id, status FROM rides WHERE id = ?", (ride_id,)).fetchone()
+    if ride is None:
+        raise HTTPException(status_code=404, detail="ride not found")
+    if ride["driver_id"] != driver_id:
+        raise HTTPException(status_code=403, detail="location belongs to another driver")
+    if ride["status"] != "active":
+        raise HTTPException(status_code=409, detail="ride has ended")
+    route = db.execute(
+        """SELECT hub_latitude, hub_longitude, destination_latitude, destination_longitude
+             FROM routes WHERE id = ?""",
+        (ride["route_id"],),
+    ).fetchone()
+    return ride, route
+
+
+@app.post("/api/v1/rides/{ride_id}/locations", status_code=201)
+def update_live_location(ride_id: int, location: LiveLocationIn, me: dict = Depends(current_user)) -> dict:
+    """Upload one live GPS location; retained for older mobile clients."""
+    caller_owns(me, location.driver_id)
+    with closing(connection()) as db:
+        _, route = _ride_and_route_for_location(db, ride_id, location.driver_id)
+        stored = _store_live_location(db, ride_id, location, utc_now())
+        db.commit()
+    return _location_response(stored, route)
+
+
+@app.post("/api/v1/rides/{ride_id}/locations/batch", status_code=201)
+def update_live_locations(
+    ride_id: int, batch: LiveLocationBatchIn, me: dict = Depends(current_user)
+) -> dict:
+    """Upload a bounded telemetry batch in one transaction and return the newest accepted fix."""
+    caller_owns(me, batch.driver_id)
+    received_at = utc_now()
+    with closing(connection()) as db:
+        _, route = _ride_and_route_for_location(db, ride_id, batch.driver_id)
+        for location in batch.locations:
+            _store_live_location(db, ride_id, location, received_at)
+        latest = db.execute(
+            """SELECT location_id AS id, ride_id, driver_id, latitude, longitude, speed_mps, bearing,
+                      recorded_at, sample_id, accuracy_meters, received_at
+                 FROM latest_locations WHERE ride_id=?""",
+            (ride_id,),
+        ).fetchone()
+        db.commit()
+    return {"accepted": len(batch.locations), "latest": _location_response(latest, route)}
 
 
 def _finish_ride(db: sqlite3.Connection, ride_id: int, driver_id: int, outcome: str) -> dict:
@@ -1298,7 +1507,7 @@ def arrive_ride(ride_id: int, body: ArriveIn, me: dict = Depends(current_user)) 
         distance_to_destination_m: float | None = None
         if destination is not None and destination["destination_latitude"] is not None:
             latest = db.execute(
-                "SELECT latitude, longitude, recorded_at FROM live_locations WHERE ride_id = ? ORDER BY recorded_at DESC, id DESC LIMIT 1",
+                "SELECT latitude, longitude, recorded_at FROM latest_locations WHERE ride_id = ?",
                 (ride_id,),
             ).fetchone()
             if latest is None:
@@ -1341,9 +1550,7 @@ def active_rides(me: dict = Depends(current_user)) -> list[dict]:
             FROM rides
             JOIN users ON users.id = rides.driver_id
             JOIN routes ON routes.id = rides.route_id
-            LEFT JOIN live_locations locations ON locations.id = (
-              SELECT id FROM live_locations WHERE ride_id = rides.id ORDER BY recorded_at DESC, id DESC LIMIT 1
-            )
+            LEFT JOIN latest_locations locations ON locations.ride_id = rides.id
             WHERE rides.status = 'active'
             ORDER BY rides.id DESC
             """
@@ -1439,6 +1646,7 @@ def manifest() -> dict:
     """
     return {
         "product": "RouteOS",
+        "version": ROUTEOS_VERSION,
         "map_engine": "Organic Maps",
         "offline_first": True,
         "features": [
@@ -1449,6 +1657,7 @@ def manifest() -> dict:
             "vehicle-selection",
             "organic-maps-navigation",
             "live-tracking",
+            "batched-telemetry",
             "admin-console",
         ],
         "endpoints": {

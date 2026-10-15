@@ -30,13 +30,20 @@ class DraftStop {
 }
 
 class DraftProduct {
-  DraftProduct({required this.name, required this.quantity, required this.unit});
+  DraftProduct({
+    required this.name,
+    required this.quantity,
+    required this.unit,
+  });
 
   // Mutable so the product rows can be edited in place before saving.
   String name, quantity, unit;
 
-  Map<String, dynamic> toJson() =>
-      {'product_name': name, 'planned_quantity': quantity, 'uom': unit};
+  Map<String, dynamic> toJson() => {
+    'product_name': name,
+    'planned_quantity': quantity,
+    'uom': unit,
+  };
 }
 
 /// Admin screen that builds a delivery trip without needing ERPNext.
@@ -80,9 +87,11 @@ class _TripBuilderState extends State<TripBuilder> {
     try {
       final result = await widget.request('drivers') as Map;
       if (!mounted) return;
-      setState(() => _drivers = (result['drivers'] as List)
-          .map((item) => Map<String, dynamic>.from(item as Map))
-          .toList());
+      setState(
+        () => _drivers = (result['drivers'] as List)
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList(),
+      );
     } catch (_) {
       if (mounted) setState(() => _drivers = const []);
     }
@@ -109,7 +118,11 @@ class _TripBuilderState extends State<TripBuilder> {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not create the trip: $error')),
+          SnackBar(
+            content: Text(
+              AppStrings.of(context).tripBuilderCreateFailed(error.toString()),
+            ),
+          ),
         );
       }
     }
@@ -126,14 +139,15 @@ class _TripBuilderState extends State<TripBuilder> {
   Future<void> _editStop(int index) async {
     final stop = await showDialog<DraftStop>(
       context: context,
-      builder: (_) => _StopDialog(stopNumber: index + 1, initial: _stops[index]),
+      builder: (_) =>
+          _StopDialog(stopNumber: index + 1, initial: _stops[index]),
     );
     if (stop != null && mounted) setState(() => _stops[index] = stop);
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text('Create trip')),
+    appBar: AppBar(title: Text(AppStrings.of(context).tripBuilderTitle)),
     body: Form(
       key: _form,
       child: Column(
@@ -156,7 +170,9 @@ class _TripBuilderState extends State<TripBuilder> {
                 SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                   initialValue: _driverId,
-                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderDriver),
+                  decoration: InputDecoration(
+                    labelText: AppStrings.of(context).tripBuilderDriver,
+                  ),
                   items: [
                     for (final driver in _drivers)
                       DropdownMenuItem(
@@ -164,8 +180,12 @@ class _TripBuilderState extends State<TripBuilder> {
                         child: Text(driver['name'].toString()),
                       ),
                   ],
-                  onChanged: _saving ? null : (value) => setState(() => _driverId = value),
-                  validator: (value) => value == null ? 'Choose a driver' : null,
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _driverId = value),
+                  validator: (value) => value == null
+                      ? AppStrings.of(context).tripBuilderChooseDriver
+                      : null,
                 ),
                 SizedBox(height: 12),
                 TextFormField(
@@ -189,11 +209,11 @@ class _TripBuilderState extends State<TripBuilder> {
                     child: ListTile(
                       title: Text(_stops[i].customer),
                       subtitle: Text(
-                        '${_stops[i].products.length} product(s) · '
+                        '${AppStrings.of(context).tripBuilderProductCount(_stops[i].products.length)} · '
                         '${_stops[i].products.map((product) => '${product.quantity} ${product.unit}').join(', ')}',
                       ),
                       trailing: IconButton(
-                        tooltip: 'Remove stop',
+                        tooltip: AppStrings.of(context).tripBuilderRemoveStop,
                         icon: const Icon(Icons.delete_outline),
                         onPressed: _saving
                             ? null
@@ -222,7 +242,7 @@ class _TripBuilderState extends State<TripBuilder> {
               padding: const EdgeInsets.all(12),
               child: FilledButton(
                 onPressed: _canSave ? _save : null,
-                child: const Text('Create trip'),
+                child: Text(AppStrings.of(context).tripBuilderCreate),
               ),
             ),
           ),
@@ -266,7 +286,10 @@ class _StopDialogState extends State<_StopDialog> {
     _longitude = TextEditingController(
       text: initial == null ? '' : initial.longitude.toString(),
     );
-    _products = [for (final product in initial?.products ?? const <DraftProduct>[]) product];
+    _products = [
+      for (final product in initial?.products ?? const <DraftProduct>[])
+        product,
+    ];
   }
 
   @override
@@ -279,9 +302,9 @@ class _StopDialogState extends State<_StopDialog> {
     super.dispose();
   }
 
-  void _warn(String message) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(message)),
-  );
+  void _warn(String message) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(message)));
 
   void _save() {
     if (!_form.currentState!.validate()) return;
@@ -300,7 +323,7 @@ class _StopDialogState extends State<_StopDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text('Supermarket ${widget.stopNumber}'),
+    title: Text(AppStrings.of(context).tripBuilderStopTitle(widget.stopNumber)),
     scrollable: true,
     content: Form(
       key: _form,
@@ -310,15 +333,19 @@ class _StopDialogState extends State<_StopDialog> {
           TextFormField(
             controller: _customer,
             maxLength: 140,
-            decoration: InputDecoration(labelText: AppStrings.of(context).shopName),
+            decoration: InputDecoration(
+              labelText: AppStrings.of(context).shopName,
+            ),
             validator: (value) => (value ?? '').trim().isEmpty
-                ? 'Enter the supermarket name'
+                ? AppStrings.of(context).shopNameRequired
                 : null,
           ),
           TextFormField(
             controller: _address,
             maxLength: 500,
-            decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderAddress),
+            decoration: InputDecoration(
+              labelText: AppStrings.of(context).tripBuilderAddress,
+            ),
           ),
           Row(
             children: [
@@ -329,7 +356,9 @@ class _StopDialogState extends State<_StopDialog> {
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderLatitude),
+                  decoration: InputDecoration(
+                    labelText: AppStrings.of(context).tripBuilderLatitude,
+                  ),
                   validator: (value) => _coordinate(value, limit: 90),
                 ),
               ),
@@ -341,7 +370,9 @@ class _StopDialogState extends State<_StopDialog> {
                     decimal: true,
                     signed: true,
                   ),
-                  decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderLongitude),
+                  decoration: InputDecoration(
+                    labelText: AppStrings.of(context).tripBuilderLongitude,
+                  ),
                   validator: (value) => _coordinate(value, limit: 180),
                 ),
               ),
@@ -365,7 +396,9 @@ class _StopDialogState extends State<_StopDialog> {
                     flex: 3,
                     child: TextFormField(
                       initialValue: _products[i].name,
-                      decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderProduct),
+                      decoration: InputDecoration(
+                        labelText: AppStrings.of(context).tripBuilderProduct,
+                      ),
                       onChanged: (value) => _products[i].name = value,
                     ),
                   ),
@@ -376,7 +409,9 @@ class _StopDialogState extends State<_StopDialog> {
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderQuantity),
+                      decoration: InputDecoration(
+                        labelText: AppStrings.of(context).tripBuilderQuantity,
+                      ),
                       onChanged: (value) => _products[i].quantity = value,
                     ),
                   ),
@@ -384,7 +419,9 @@ class _StopDialogState extends State<_StopDialog> {
                   Expanded(
                     child: TextFormField(
                       initialValue: _products[i].unit,
-                      decoration: InputDecoration(labelText: AppStrings.of(context).tripBuilderUnit),
+                      decoration: InputDecoration(
+                        labelText: AppStrings.of(context).tripBuilderUnit,
+                      ),
                       onChanged: (value) => _products[i].unit = value,
                     ),
                   ),
@@ -418,7 +455,7 @@ class _StopDialogState extends State<_StopDialog> {
           // A stop without products would leave the driver nothing to confirm,
           // so it is rejected here rather than sent to the server.
           if (_products.isEmpty) {
-            _warn('Add at least one product so the driver can confirm the delivery');
+            _warn(AppStrings.of(context).tripBuilderStopNeedsProduct);
             return;
           }
           final validProduct = _products.where(
@@ -428,7 +465,7 @@ class _StopDialogState extends State<_StopDialog> {
                 (double.tryParse(product.quantity.trim()) ?? 0) > 0,
           );
           if (validProduct.length != _products.length) {
-            _warn('Each product needs a name, a positive quantity and a unit');
+            _warn(AppStrings.of(context).tripBuilderProductIncomplete);
             return;
           }
           _products = [for (final product in validProduct) product];
@@ -441,8 +478,12 @@ class _StopDialogState extends State<_StopDialog> {
 
   String? _coordinate(String? value, {required double limit}) {
     final parsed = double.tryParse((value ?? '').trim());
-    if (parsed == null || !parsed.isFinite) return AppStrings.of(context).tripBuilderCoordinateMissing;
-    if (parsed < -limit || parsed > limit) return AppStrings.of(context).tripBuilderCoordinateRange;
+    if (parsed == null || !parsed.isFinite) {
+      return AppStrings.of(context).tripBuilderCoordinateMissing;
+    }
+    if (parsed < -limit || parsed > limit) {
+      return AppStrings.of(context).tripBuilderCoordinateRange;
+    }
     return null;
   }
 }

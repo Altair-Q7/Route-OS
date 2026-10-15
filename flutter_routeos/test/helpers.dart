@@ -8,13 +8,13 @@ import 'package:routeos_shell/l10n/locale.dart';
 /// Uses the same resolution as the app, so a test of an unsupported language
 /// exercises the real fallback rather than Flutter's first-locale default.
 Widget wrapForTest(Widget child, {String? deviceLanguage}) => MaterialApp(
-      localizationsDelegates: const [
-        AppStrings.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: AppStrings.supportedLocales,
-      locale: resolveLocale(deviceLanguage),
-      home: child,
-    );
+  localizationsDelegates: const [
+    AppStrings.delegate,
+    GlobalMaterialLocalizations.delegate,
+    GlobalWidgetsLocalizations.delegate,
+    GlobalCupertinoLocalizations.delegate,
+  ],
+  supportedLocales: AppStrings.supportedLocales,
+  locale: resolveLocale(deviceLanguage),
+  home: child,
+);

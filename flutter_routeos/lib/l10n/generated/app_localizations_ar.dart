@@ -334,6 +334,9 @@ class AppStringsAr extends AppStrings {
   String get tripBuilderRemoveProduct => 'إزالة المنتج';
 
   @override
+  String get tripBuilderRemoveStop => 'إزالة المحطة';
+
+  @override
   String get tripBuilderProduct => 'المنتج';
 
   @override
@@ -455,6 +458,40 @@ class AppStringsAr extends AppStrings {
 
   @override
   String get adminActiveDrivers => 'السائقون النشطون';
+
+  @override
+  String adminTrackingSummary(int active, int live) {
+    return '$active نشطة · $live مباشرة';
+  }
+
+  @override
+  String get adminLive => 'مباشر';
+
+  @override
+  String get adminDriverFallback => 'سائق';
+
+  @override
+  String get adminTimeNow => 'الآن';
+
+  @override
+  String adminSecondsAgo(int count) {
+    return 'قبل $count ث';
+  }
+
+  @override
+  String adminMinutesAgo(int count) {
+    return 'قبل $count د';
+  }
+
+  @override
+  String adminHoursAgo(int count) {
+    return 'قبل $count س';
+  }
+
+  @override
+  String adminSpeedKmh(int speed) {
+    return '$speed كم/س';
+  }
 
   @override
   String adminLiveRides(int count) {
@@ -595,6 +632,9 @@ class AppStringsAr extends AppStrings {
       'لا توجد مسارات محفوظة بعد. خطط أو سجّل مسارك الأول.';
 
   @override
+  String get routesNoMatches => 'لا توجد مسارات تطابق البحث أو عامل التصفية.';
+
+  @override
   String get routesSearch => 'ابحث في المسارات المحفوظة';
 
   @override
@@ -620,6 +660,18 @@ class AppStringsAr extends AppStrings {
 
   @override
   String get routeDelete => 'حذف المسار';
+
+  @override
+  String routeDeleteTitle(String name) {
+    return 'حذف «$name»؟';
+  }
+
+  @override
+  String get routeDeleteHint =>
+      'يؤدي هذا إلى إزالة المسار من RouteOS للجميع. سيُحفظ سجل الرحلات المكتملة.';
+
+  @override
+  String get routeRecordedTrack => 'مسار مسجّل';
 
   @override
   String get routeRename => 'إعادة تسمية المسار';
@@ -772,6 +824,100 @@ class AppStringsAr extends AppStrings {
 
   @override
   String get actionRename => 'إعادة تسمية';
+
+  @override
+  String get actionAssign => 'إسناد';
+
+  @override
+  String get tripBuilderChooseDriver => 'اختر سائقًا';
+
+  @override
+  String tripBuilderProductCount(int count) {
+    return '$count منتجات';
+  }
+
+  @override
+  String get tripBuilderEnterUnit => 'أدخل وحدة';
+
+  @override
+  String get deliveriesErpTrip => 'رحلة ERPNext';
+
+  @override
+  String deliveriesSyncError(String error) {
+    return 'خطأ في مزامنة ERP — $error';
+  }
+
+  @override
+  String get deliveriesSyncPending => 'مزامنة ERP: قيد الانتظار';
+
+  @override
+  String get deliveriesSyncNotSynced => 'مزامنة ERP: لم تتم المزامنة';
+
+  @override
+  String deliveriesSyncLast(String time) {
+    return 'مزامنة ERP: آخر مزامنة $time';
+  }
+
+  @override
+  String get stateUnknown => 'غير معروف';
+
+  @override
+  String get deliveryActionArrived => 'تسجيل الوصول';
+
+  @override
+  String get deliveryActionDelivered => 'تأكيد التسليم';
+
+  @override
+  String get deliveryActionPartial => 'تسجيل توصيل جزئي';
+
+  @override
+  String get deliveryActionFailed => 'تسجيل فشل التوصيل';
+
+  @override
+  String get deliveryActionUpdate => 'تحديث المحطة';
+
+  @override
+  String get deliveriesNextComplete =>
+      'التالي: اكتملت جميع المحطات — المسار جاهز للإغلاق.';
+
+  @override
+  String get deliveriesNextLinkRideAdmin =>
+      'التالي: اربط رحلة قبل أن يتمكن السائق من تحديث المحطات.';
+
+  @override
+  String deliveriesNextLinkRideDriver(String vehicle) {
+    return 'التالي: ابدأ المسار المحفوظ بالمركبة $vehicle، ثم اربطه هنا.';
+  }
+
+  @override
+  String deliveriesNextConfirm(String customer) {
+    return 'التالي: أكد التوصيل لدى $customer.';
+  }
+
+  @override
+  String deliveriesNextDrive(String customer) {
+    return 'التالي: توجّه إلى $customer.';
+  }
+
+  @override
+  String deliveriesStopsCompleted(int completed, int total) {
+    return 'المحطات: اكتمل $completed من $total';
+  }
+
+  @override
+  String deliveriesReason(String reason) {
+    return 'السبب: $reason';
+  }
+
+  @override
+  String deliveriesExtraRequest(
+    String shop,
+    String amount,
+    String unit,
+    String product,
+  ) {
+    return 'طلب $shop كمية $amount $unit من $product';
+  }
 
   @override
   String get adminRefreshRides => 'تحديث الرحلات النشطة';

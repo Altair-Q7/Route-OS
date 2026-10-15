@@ -59,6 +59,12 @@ void ApiMarkPoint::SetApiID(std::string const & id)
   m_id = id;
 }
 
+void ApiMarkPoint::SetPosition(m2::PointD const & position)
+{
+  SetDirty();
+  m_ptOrg = position;
+}
+
 void ApiMarkPoint::SetStyle(df::ColorConstant style)
 {
   SetDirty();

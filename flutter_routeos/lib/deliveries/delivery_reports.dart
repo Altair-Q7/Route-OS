@@ -88,7 +88,10 @@ class _DeliveryReportsState extends State<DeliveryReports> {
                     padding: const EdgeInsets.all(12),
                     children: [
                       if (_shortages.isNotEmpty) ...[
-                        Text(t.reportsShortages, style: Theme.of(context).textTheme.titleMedium),
+                        Text(
+                          t.reportsShortages,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
                         const SizedBox(height: 4),
                         for (final shortage in _shortages)
                           Card(
@@ -106,7 +109,10 @@ class _DeliveryReportsState extends State<DeliveryReports> {
                         const SizedBox(height: 16),
                       ],
                       if (_totals.isNotEmpty) ...[
-                        Text(t.reportsTotals, style: Theme.of(context).textTheme.titleMedium),
+                        Text(
+                          t.reportsTotals,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
                         const SizedBox(height: 4),
                         Card(
                           child: Column(
@@ -114,7 +120,9 @@ class _DeliveryReportsState extends State<DeliveryReports> {
                               for (final total in _totals)
                                 ListTile(
                                   dense: true,
-                                  title: Text('${total['product_name']} (${total['uom']})'),
+                                  title: Text(
+                                    '${total['product_name']} (${total['uom']})',
+                                  ),
                                   trailing: Text(
                                     '${total['delivered_quantity']} / ${total['planned_quantity']}',
                                   ),
@@ -124,7 +132,10 @@ class _DeliveryReportsState extends State<DeliveryReports> {
                         ),
                         const SizedBox(height: 16),
                       ],
-                      Text(t.reportsTrips, style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        t.reportsTrips,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                       const SizedBox(height: 4),
                       if (_trips.isEmpty)
                         Padding(
@@ -142,11 +153,15 @@ class _DeliveryReportsState extends State<DeliveryReports> {
                               for (final stop in trip['stops'] as List)
                                 ListTile(
                                   dense: true,
-                                  title: Text('${stop['customer']} · ${stop['status']}'),
+                                  title: Text(
+                                    '${stop['customer']} · ${stop['status']}',
+                                  ),
                                   subtitle: Text(
                                     (stop['items'] as List)
-                                        .map((item) =>
-                                            '${item['delivered_quantity']}/${item['planned_quantity']} ${item['uom']} ${item['product_name']}')
+                                        .map(
+                                          (item) =>
+                                              '${item['delivered_quantity']}/${item['planned_quantity']} ${item['uom']} ${item['product_name']}',
+                                        )
                                         .join(', '),
                                   ),
                                 ),

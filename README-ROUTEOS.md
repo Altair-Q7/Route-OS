@@ -9,7 +9,7 @@ The implemented MVP workflow is:
 ```text
 Quick login → RouteOS record/draw → Organic Maps track geometry → named shared
 route → another driver selects it → vehicle choice → active ride → Organic Maps
-navigation → admin live tracking → end ride
+navigation → delivery quantities and outcomes → admin live tracking → end ride
 ```
 
 - Quick-login accounts are D.B Cooper and Sukumara Kurup (drivers), and
@@ -30,9 +30,17 @@ navigation → admin live tracking → end ride
   history is retained as a hidden backend tombstone. A route cannot be removed
   while an active ride is using it.
 - Vehicle type and number are stored only on a ride; there is no fleet module.
-- During a ride the driver uploads the latest GPS location every five seconds.
-  The admin map polls active rides and stops showing a driver after End Ride.
-- The backend stores users, tracks, routes, rides, and live locations only.
+- During a ride the driver captures live GPS every five seconds. Offline samples
+  are durable and uploaded in batches when connectivity returns.
+- The admin map updates stable driver markers in place, so a refresh no longer
+  clears the marker layer or forces the viewport away from what the admin is
+  inspecting.
+- Admins can create delivery trips directly in RouteOS, assign product quantities
+  per supermarket, link them to a driver's ride, and review shortages, failures,
+  extra requests, and delivered totals. ERPNext synchronization is optional;
+  RouteOS delivery tracking also works on its own.
+- The backend stores RouteOS users, routes, rides, telemetry, delivery operations,
+  and audit history. It does not duplicate Organic Maps routing or map data.
 
 ## Build the app
 
@@ -46,6 +54,19 @@ cd android
 ./gradlew -Parm64 :app:assembleGoogleDebug
 ./gradlew -Parm64 :app:lintGoogleDebug
 ```
+
+For a tester release build:
+
+```bash
+bash tools/build-routeos-flutter-aar.sh
+cd android
+./gradlew -Parm64 :app:assembleGoogleRelease -ProuteOsDemoRelease=true
+```
+
+`routeOsDemoRelease` uses the repository's demo certificate and is suitable only
+for sideloaded testing. A Play Store or managed-device release must instead use a
+private production key configured in `android/app/secure.properties`; never
+commit that file or its passwords.
 
 Do not commit generated Flutter AARs or `.android`. Rebuild the AAR after Dart
 changes. Google builds require the real `data/World.mwm` asset, supplied according
@@ -85,8 +106,8 @@ Development quick-login must not be exposed on a public backend.
 Install the Google debug APK and launch its existing resource-downloader entry:
 
 ```bash
-adb install -r android/app/build/outputs/apk/google/debug/OrganicMaps-*-google-debug.apk
-adb shell am start -n app.organicmaps.debug/app.organicmaps.DownloadResourcesActivity
+adb install -r android/app/build/outputs/apk/google/debug/RouteOS-*-google-debug.apk
+adb shell am start -n app.routeos.debug/app.organicmaps.DownloadResourcesActivity
 python3 tools/routeos-device-ui.py --expect RouteOS
 ```
 
@@ -96,20 +117,43 @@ finish; do not run concurrent ADB interaction scripts. Road routing requires the
 relevant regional offline map. Actual turn-by-turn/rerouting and multi-turn
 recording still require a physical driving test.
 
-## Verification on 2 October 2026
+## Verification on 15 October 2026
+
+The current Alpha 2.4 tree was checked with the backend and Flutter suites,
+Android JVM tests, full Android lint, a phone-app release build, and focused
+location-outbox instrumentation on the connected Nothing A142.
+
+| Current automated check | Result |
+| --- | --- |
+| Backend tests | PASS — 183 tests |
+| Backend process `/health` and manifest smoke test | PASS |
+| Flutter analysis | PASS — no issues |
+| Flutter tests | PASS — 53 tests |
+| Android Google debug assembly and JVM tests | PASS |
+| Android full-module lint | PASS — 0 errors; 1,381 inherited warnings; see tooling caveat below |
+| Location store/uploader instrumentation on phone | PASS — 8 tests |
+| Google phone-app release assembly | PASS |
+| APK v2 signature verification | PASS — demo certificate, not production signing |
+| Release reinstall / RouteOS launch / system Back to launcher | PASS on Nothing A142 |
+
+The repository-wide Google release task also includes the optional Wear app,
+which correctly refuses to produce a release without its own private keystore.
+The RouteOS phone release target above is the supported tester build command.
+
+### Earlier manual device coverage
 
 The installed Android debug build runs actual Flutter product UI with the native
 Organic Maps platform view on the connected Nothing A142. Regional Kerala and
 Tamil Nadu maps are installed; these checks do not substitute screenshots or a
 network routing service for the map engine.
 
-| Check | Result |
+The following manual checks were completed on 2 October 2026. They were not all
+repeated by the final automated pass, so they are recorded separately rather
+than presented as fresh release evidence.
+
+| Manual check | Result |
 | --- | --- |
 | Clean Android debug assembly | PASS |
-| Android lint | Task succeeds; 0 errors, 436 warnings; see tooling caveat below |
-| Flutter analysis | No issues |
-| Flutter planner tests | 5 passed |
-| Backend tests | 36 passed, 0 failed |
 | Native JNI instrumentation on phone | 2 passed, including 2,000-point anchor input |
 | Installation / Flutter launch / native map / real map taps | PASS |
 | Two-point and four-point native road routing | PASS |
@@ -131,9 +175,11 @@ PSI exception while still returning success and producing its report. A clean
 lint run also completed without that exception; this is not a claim that every
 warning or tooling issue has been resolved.
 
-Organic Maps' core `libs/` code and `TrackRecordingService` were not modified.
-Changes to native code are the UI/engine bridge, JNI adapters, shared authenticated
-HTTP client, and explicit RouteOS ride-ending integration in NavigationService.
+The Organic Maps routing and recording engines remain unchanged. The small core
+map extension adds position updates to existing API markers so RouteOS can move
+admin driver markers without deleting them or recentering the map. Other native
+changes are confined to the UI/engine bridge, JNI adapter, authenticated HTTP
+client, and explicit RouteOS ride lifecycle in NavigationService.
 Required map assets and original user routes were preserved. One shared test
 route was added through the phone to verify save/reload and cross-driver access.
 
@@ -141,9 +187,9 @@ Not yet verified: an actual multi-turn drive recording/upload, moving turn-by-tu
 guidance, rerouting, arrival, audible voice guidance, lock-screen/notification
 reopening, and simultaneous two-device admin map tracking. Backend/admin access
 and active-ride location reporting were tested, but are not substitutes for that
-two-device check. An independent clean clone, production HTTPS deployment and
-release signing are also not verified. This is a development MVP, not a signed
-beta release.
+two-device check. An independent clean clone, production HTTPS deployment,
+durable hosted database migration, and production release signing are also not
+verified. Alpha 2.4 is a tester release, not a store-signed production build.
 
 Organic Maps limits routing to 102 points. Complete recorded GPS tracks are kept;
 long recordings use native simplification anchors for road navigation, which can

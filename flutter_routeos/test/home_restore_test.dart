@@ -119,6 +119,52 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('admin points are sent only when active rides change', (
+    tester,
+  ) async {
+    final activeResponses = <List<Map<String, dynamic>>>[
+      [
+        {'id': 1, 'latitude': 10.0, 'longitude': 20.0, 'status': 'en_route'},
+        {'id': 2, 'latitude': 11.0, 'longitude': 21.0, 'status': 'waiting'},
+      ],
+      [
+        {'id': 2, 'latitude': 11.0, 'longitude': 21.0, 'status': 'waiting'},
+        {'id': 1, 'latitude': 10.0, 'longitude': 20.0, 'status': 'en_route'},
+      ],
+      [
+        {'id': 1, 'latitude': 10.5, 'longitude': 20.0, 'status': 'en_route'},
+        {'id': 2, 'latitude': 11.0, 'longitude': 21.0, 'status': 'waiting'},
+      ],
+    ];
+    var adminPointsCalls = 0;
+    messenger.setMockMethodCallHandler(Bridge.methods, (call) async {
+      if (call.method == 'admin.points') {
+        adminPointsCalls++;
+        return null;
+      }
+      return switch (call.method) {
+        'session' => {'id': 1, 'role': 'admin', 'name': 'Alice'},
+        'draft.load' => {},
+        'routes' => [],
+        'active' => activeResponses.removeAt(0),
+        _ => null,
+      };
+    });
+    await showHome(tester);
+    await tester.pumpAndSettle();
+    expect(adminPointsCalls, 1);
+    expect(find.text('2 active · 2 live'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Refresh live rides'));
+    await tester.pumpAndSettle();
+    expect(adminPointsCalls, 1);
+
+    await tester.tap(find.byTooltip('Refresh live rides'));
+    await tester.pumpAndSettle();
+    expect(adminPointsCalls, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('missing server ride clears stale navigation UI', (tester) async {
     final commands = <String>[];
     messenger.setMockMethodCallHandler(Bridge.methods, (call) async {
@@ -260,7 +306,9 @@ void main() {
     final generations = <int>[];
     messenger.setMockMethodCallHandler(Bridge.methods, (call) async {
       if (call.method == 'calculate') {
-        generations.add(((call.arguments as Map)['data'] as Map)['generation'] as int);
+        generations.add(
+          ((call.arguments as Map)['data'] as Map)['generation'] as int,
+        );
       }
       return switch (call.method) {
         'session' => {'id': 1, 'role': 'driver', 'name': 'Alice'},
